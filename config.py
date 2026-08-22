@@ -42,3 +42,10 @@ ENABLE_LLM_FALLBACK = os.getenv("ENABLE_LLM_FALLBACK", "true").strip().lower() i
     "yes",
 }
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or "gpt-4o-mini"
+
+# Experience lookup: set to false to stop the app fetching public web pages.
+ENABLE_EXPERIENCE_SEARCH = os.getenv("ENABLE_EXPERIENCE_SEARCH", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}

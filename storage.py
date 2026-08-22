@@ -33,6 +33,7 @@ EXPERIENCE_FIELDNAMES = [
     "position",
     "company",
     "role",
+    "dates",
     "source",
     "found_at",
 ]

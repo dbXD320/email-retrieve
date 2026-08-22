@@ -106,9 +106,14 @@ def experience():
         "email": email,
     }
 
-    entries, from_cache = experience_store.lookup(person)
+    refresh = request.args.get("refresh") == "1"
+    entries, from_cache, error = experience_store.lookup(person, refresh=refresh)
     app.logger.info(
-        "Experience for %s: %s entries%s", email, len(entries), " (cached)" if from_cache else ""
+        "Experience for %s: %s entries%s%s",
+        email,
+        len(entries),
+        " (cached)" if from_cache else "",
+        f" [{error}]" if error else "",
     )
 
     return render_template(
@@ -119,6 +124,9 @@ def experience():
         entries=entries,
         from_cache=from_cache,
         searched=experience_store.searched(email),
+        profile=experience_store.profile_link(email),
+        error=error,
+        refreshed=refresh,
         store_path=config.EXPERIENCE_PATH,
     )
 

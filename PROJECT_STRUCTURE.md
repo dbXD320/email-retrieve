@@ -15,7 +15,7 @@ email-retrieve/
 ├── email_parser.py         # raw Gmail message -> recipient / subject / date / body
 ├── company.py              # guess the recipient's company from the body
 ├── storage.py              # write / read the CSVs (the caches)
-├── experience.py           # previous-work-experience store (search not built yet)
+├── experience.py           # web search + fetch + LLM structuring, cached to CSV
 ├── app.py                  # minimal Flask web view of the results
 ├── templates/
 │   ├── index.html          # the list: table, page size, pagination
@@ -116,19 +116,40 @@ Start it with `python app.py` and open http://127.0.0.1:5000.
 Previous work experience per person, cached in `output/experience.csv` - one row per
 company, `position` 1 = most recent previous role:
 
-    person_email, person_name, current_company, position, company, role, source, found_at
+    person_email, person_name, current_company, position, company, role, dates, source, found_at
 
-- `cached(email)` - stored entries, ordered. `searched(email)` - whether they were tried.
-- `save(person, entries)` - appends. An empty `entries` writes one blank row, so a person
-  who genuinely has nothing found is not searched again.
-- `find(person)` - **the seam, not implemented yet.** It should return
-  `{company, role, source}` in order, most recent first; `lookup` then stores it and the
-  page renders it. Until then `lookup` catches the `NotImplementedError` and the page
-  explains what is missing.
+A lookup runs in four steps, and the LLM only sees step 3's output:
 
-Each row's **Find Experience** button posts to `/experience?email=...`, which shows stored
-results if present, "searched, nothing found" if that was the outcome, and otherwise the
-name / current company / email a lookup will be given.
+1. `_queries` - a few searches from the name, current company and email domain (a free
+   provider domain is not used as a search term).
+2. `_search` - DuckDuckGo's HTML endpoint. Free, no key, no account. Result urls come
+   wrapped in a redirect, so `_decode_result_url` unwraps them.
+3. `_fetch_text` - fetches up to 4 pages with `requests`, strips script/style/nav with
+   BeautifulSoup, keeps 4000 chars each, with a courtesy delay between requests. Sites that
+   block automated fetches (LinkedIn, Instagram, ...) are not fetched at all - their search
+   snippets are used instead, which is often where the useful text is.
+4. `_structure` - the LLM turns the retrieved text into `{company, role, dates, source}`.
+   It is told to use nothing but that text, to skip same-name strangers unless something
+   corroborates the person, and to return null for anything not stated. `_clean` then drops
+   the current employer, malformed entries, and any source url that was not actually
+   retrieved - so an invented citation cannot survive.
+
+When nothing verifiable is found, `_profile_link` returns a `linkedin.com/in/` url from the
+search results so the page can offer something to check by hand. A profile whose text
+mentions the person's current company wins over the first hit, since names are not unique;
+`/pub/dir/` listing pages are not profiles and are ignored. The link is kept in the blank
+row's `source` column, so it needs no extra schema.
+
+`lookup` returns `(entries, from_cache, error)`. The cache is served when the person was
+searched before, so a second click costs nothing. A fruitless search stores one blank row,
+which is what stops it being repeated - but a search that could not run at all raises
+`SearchUnavailable` and stores **nothing**, so a rate limit never gets mistaken for "this
+person has no history". The free search endpoint does rate limit under repeated use; the
+page says so and the person can be retried later. Switch the whole thing off with
+`ENABLE_EXPERIENCE_SEARCH=false`.
+
+Each row's **Find Experience** button posts to `/experience?email=...`, which renders the
+companies, roles, dates and a link to each source.
 
 ### `tests/`
 Two pytest files covering the logic that's actually easy to get wrong, using hardcoded

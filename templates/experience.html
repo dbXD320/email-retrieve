@@ -20,10 +20,28 @@
       <div><span class="k">Email</span><span>{{ person.email }}</span></div>
     </div>
 
+    <div class="bar">
+      <form action="{{ url_for('experience') }}" method="get">
+        <input type="hidden" name="email" value="{{ person.email }}">
+        <input type="hidden" name="back" value="{{ back }}">
+        <input type="hidden" name="refresh" value="1">
+        <button class="btn" type="submit">Search again</button>
+      </form>
+      {% if refreshed %}<span class="meta">Discarded what was stored and searched afresh.</span>{% endif %}
+    </div>
+
+    {% if error %}
+      <p class="note">
+        Could not search just now - {{ error }}. Anything already stored is kept, so nothing
+        was lost; try again in a few minutes. The free search endpoint limits how often it
+        can be queried.
+      </p>
+    {% endif %}
+
     {% if entries %}
       <table>
         <thead>
-          <tr><th>#</th><th>Company</th><th>Role</th></tr>
+          <tr><th>#</th><th>Company</th><th>Role</th><th>Dates</th><th>Source</th></tr>
         </thead>
         <tbody>
           {% for entry in entries %}
@@ -31,29 +49,47 @@
               <td>{{ entry.position }}</td>
               <td>{{ entry.company }}</td>
               <td{% if not entry.role %} class="blank"{% endif %}>{{ entry.role or '—' }}</td>
+              <td{% if not entry.dates %} class="blank"{% endif %}>{{ entry.dates or '—' }}</td>
+              <td>
+                {% if entry.source %}
+                  <a href="{{ entry.source }}" target="_blank" rel="noopener">link</a>
+                {% else %}<span class="blank">—</span>{% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
       <p class="meta" style="margin-top:1rem">
-        Most recent previous role first, from <code>{{ store_path }}</code>.
+        Most recent previous role first, from <code>{{ store_path }}</code>. A dash means the
+        sources did not state it - nothing here is guessed.
       </p>
 
-    {% elif searched %}
-      <p class="note">Searched before and nothing was found. Stored, so it is not retried.</p>
+    {% elif error %}
+      {# the banner above already explains it #}
 
     {% else %}
       <p class="note">
-        Experience search is not built yet - this button is wired up and the store is ready,
-        but nothing searches the web so far. The three values above are what will be passed in.
+        {% if from_cache %}
+          Searched previously and nothing verifiable was found. Cached, so it is not retried.
+        {% else %}
+          Searched public sources just now and found no verifiable previous roles. Recorded,
+          so clicking again will not repeat the search.
+        {% endif %}
       </p>
 
-      <p class="meta" style="margin-bottom:.2rem">Still to build:</p>
-      <ul class="todo">
-        <li>implement <code>experience.find(person)</code> to search public sources</li>
-        <li>return <code>{company, role, source}</code> in order, most recent first</li>
-        <li>results save to <code>{{ store_path }}</code> automatically and show here</li>
-      </ul>
+      {% if profile %}
+        <div class="kv">
+          <div>
+            <span class="k">Likely profile</span>
+            <span><a href="{{ profile }}" target="_blank" rel="noopener">{{ profile }}</a></span>
+          </div>
+        </div>
+        <p class="meta">
+          Found in the search results but not readable automatically, so nothing was
+          extracted from it. Worth a look by hand - and it may be a different person with
+          the same name.
+        </p>
+      {% endif %}
     {% endif %}
   {% endif %}
 </main>
