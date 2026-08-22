@@ -54,7 +54,7 @@
             <td class="action">
               <form action="{{ url_for('experience') }}" method="get">
                 <input type="hidden" name="email" value="{{ row.email }}">
-                <input type="hidden" name="back" value="?size={{ size }}&page={{ page }}">
+                <input type="hidden" name="back" value="{{ url_for('index') }}?size={{ size }}&page={{ page }}">
                 <button class="btn" type="submit">Find Experience</button>
               </form>
             </td>

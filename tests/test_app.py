@@ -27,3 +27,34 @@ def test_address_is_used_only_when_there_is_no_header_name():
 
 def test_blank_row_does_not_crash():
     assert app.display_name({"recipient_name": "", "recipient_email": ""}) == ("-", True)
+
+
+# --- navigation --------------------------------------------------------------
+
+
+def make_client():
+    return app.app.test_client()
+
+
+def test_back_value_is_an_absolute_path():
+    """A bare '?size=..' would resolve against /experience, not the list."""
+    html = make_client().get("/?size=20&page=1").get_data(as_text=True)
+    assert 'name="back" value="/?size=20&page=1"' in html
+
+
+def test_experience_without_an_email_redirects_to_the_list():
+    response = make_client().get("/experience?size=20&page=4")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
+
+
+def test_experience_for_an_unknown_person_redirects_back():
+    response = make_client().get("/experience?email=nobody@nowhere.test&back=/?size=10")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/?size=10"
+
+
+def test_an_off_site_back_value_is_ignored():
+    response = make_client().get("/experience?email=nobody@nowhere.test&back=https://evil.example/")
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"

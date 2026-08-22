@@ -11,9 +11,6 @@
   <h1>{{ person.name }}</h1>
   <p class="meta"><a href="{{ back }}">&lsaquo; Back to the list</a></p>
 
-  {% if not found %}
-    <p class="note">No stored row for <code>{{ person.email }}</code>.</p>
-  {% else %}
     <div class="kv">
       <div><span class="k">Name</span><span>{{ person.name }}</span></div>
       <div><span class="k">Current company</span><span>{{ person.company or '—' }}</span></div>
@@ -93,7 +90,6 @@
         </p>
       {% endif %}
     {% endif %}
-  {% endif %}
 </main>
 </body>
 </html>

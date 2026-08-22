@@ -9,7 +9,7 @@ is ever processed twice, and the mailbox is never processed upfront.
 
 import math
 
-from flask import Flask, render_template, request
+from flask import Flask, redirect, render_template, request, url_for
 
 import config
 import experience as experience_store
@@ -93,16 +93,24 @@ def experience():
     already in the CSV this shows what a lookup will be given.
     """
     email = (request.args.get("email") or "").strip().lower()
-    back = request.args.get("back") or "/"
+
+    # Only ever a path on this app, never an arbitrary url.
+    back = request.args.get("back") or ""
+    if not back.startswith("/"):
+        back = url_for("index")
 
     row = next(
         (r for r in storage.read_rows(config.OUTPUT_PATH)
          if (r.get("recipient_email") or "").strip().lower() == email),
         None,
     )
+    # Nothing to show without a known person - send them back to the list.
+    if row is None:
+        return redirect(back)
+
     person = {
-        "name": display_name(row)[0] if row else email or "Unknown",
-        "company": (row or {}).get("company") or "",
+        "name": display_name(row)[0],
+        "company": row.get("company") or "",
         "email": email,
     }
 
@@ -119,7 +127,6 @@ def experience():
     return render_template(
         "experience.html",
         person=person,
-        found=row is not None,
         back=back,
         entries=entries,
         from_cache=from_cache,
