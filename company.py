@@ -123,6 +123,18 @@ def _tidy_name(name: str) -> str:
     return " ".join(words[:4])
 
 
+def _trim_trailing_words(name: str) -> str:
+    """Drop trailing all-lowercase words: "Contoso listed" -> "Contoso".
+
+    Uses islower() rather than the first character, so "eBay" survives, and never
+    empties the name.
+    """
+    words = name.split()
+    while len(words) > 1 and words[-1].islower():
+        words.pop()
+    return " ".join(words)
+
+
 def _looks_like_name(name: str) -> bool:
     """A company name has a capital letter and is not a whole sentence."""
     return bool(name) and len(name.split()) <= 4 and any(c.isupper() for c in name)
@@ -139,7 +151,7 @@ def _tail_after_at(sentence: str):
     if before and before[-1].lower().strip(",;:") in SELF_CONTEXT:
         return None
 
-    candidate = _tidy_name(" ".join(parts[-1].split()[:3]))
+    candidate = _trim_trailing_words(_tidy_name(" ".join(parts[-1].split()[:3])))
     return candidate if _looks_like_name(candidate) else None
 
 
@@ -151,6 +163,7 @@ def _from_pattern(parsed: dict):
     if match:
         # Keep only the leading name-like words: "Magi" from "Magi I am open to".
         candidate = _tidy_name(" ".join(_tidy_name(match.group("company")).split()[:3]))
+        candidate = _trim_trailing_words(candidate)
         if _looks_like_name(candidate):
             return candidate
 
