@@ -5,8 +5,8 @@
 How a lookup works:
 
 1. build a few search queries from the person's name, company and email domain
-2. search DuckDuckGo's HTML endpoint (free, no key) for candidate pages
-3. fetch those pages and pull the readable text out of them
+2. hand them to `search.search`, which tries the configured providers in turn
+3. deduplicate the hits, then fetch the pages and pull the readable text out
 4. only then ask the LLM to structure what was actually retrieved
 
 The LLM is told to use nothing but the supplied text, so an unverifiable role is
@@ -25,23 +25,20 @@ from bs4 import BeautifulSoup
 
 import company as company_rules
 import config
+import search
 import storage
 
 log = logging.getLogger(__name__)
 
 
-class SearchUnavailable(RuntimeError):
-    """The search engine refused us - rate limited, blocked, or unreachable.
+# Raised when no provider could answer. Not the same as "found nothing": a refusal
+# must never be cached as a miss, or a rate limit would permanently mark someone
+# as having no history.
+SearchUnavailable = search.SearchUnavailable
 
-    Distinct from "searched and found nothing": a refusal must not be cached as a
-    miss, or a temporary block would permanently mark someone as having no history.
-    """
-
-SEARCH_URL = "https://html.duckduckgo.com/html/"
 USER_AGENT = "Mozilla/5.0 (compatible; personal-email-tool/1.0)"
 TIMEOUT = 10
 
-MAX_RESULTS = 6  # search hits considered per person
 MAX_PAGES = 4  # pages actually fetched
 PAGE_CHARS = 4000  # text kept per page
 COURTESY_DELAY = 0.7  # seconds between requests
@@ -93,14 +90,19 @@ def searched(email: str) -> bool:
 
 
 def profile_link(email: str) -> str:
-    """The profile url stored for a person whose search found nothing."""
+    """The person's stored public profile url, whatever the search found."""
     email = (email or "").strip().lower()
+    legacy = ""
     for row in storage.read_rows(config.EXPERIENCE_PATH):
         if (row.get("person_email") or "").strip().lower() != email:
             continue
+        found = (row.get("profile_url") or "").strip()
+        if found:
+            return found
+        # Rows written before profile_url existed kept it on the blank miss row.
         if not (row.get("company") or "").strip():
-            return (row.get("source") or "").strip()
-    return ""
+            legacy = (row.get("source") or "").strip()
+    return legacy
 
 
 def forget(email: str) -> int:
@@ -120,21 +122,22 @@ def save(person: dict, entries: list, profile: str = "") -> None:
     """Store a person's experience. An empty `entries` records the miss.
 
     `entries` is a list of {"company", "role", "dates", "source"} in order, most
-    recent previous role first. On a miss, `profile` is kept on the blank row so
-    the page can offer a link to check by hand.
+    recent previous role first. `profile` is the person's public profile url and is
+    kept on every row, found roles or not.
     """
     stamp = datetime.datetime.now().strftime("%Y-%m-%d")
     common = {
         "person_email": (person.get("email") or "").strip().lower(),
         "person_name": person.get("name") or "",
         "current_company": person.get("company") or "",
+        "profile_url": profile,
         "found_at": stamp,
     }
 
     if not entries:
         # One blank row so this person is not searched again.
         rows = [
-            {**common, "position": 0, "company": "", "role": "", "dates": "", "source": profile}
+            {**common, "position": 0, "company": "", "role": "", "dates": "", "source": ""}
         ]
     else:
         rows = [
@@ -171,51 +174,6 @@ def _queries(person: dict) -> list:
     return queries
 
 
-def _decode_result_url(href: str) -> str:
-    """DuckDuckGo wraps results as /l/?uddg=<encoded>. Unwrap those."""
-    if "uddg=" in href:
-        target = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("uddg")
-        if target:
-            return target[0]
-    if href.startswith("//"):
-        return "https:" + href
-    return href
-
-
-def _search(query: str) -> list:
-    """[{'title', 'url', 'snippet'}] from DuckDuckGo's HTML endpoint."""
-    try:
-        response = requests.post(
-            SEARCH_URL,
-            data={"q": query},
-            headers={"User-Agent": USER_AGENT},
-            timeout=TIMEOUT,
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise SearchUnavailable(f"search request failed: {exc}") from exc
-
-    # 202 plus an "anomaly" page is how DuckDuckGo rate limits automated use.
-    if response.status_code == 202 or "anomaly" in response.text.lower():
-        raise SearchUnavailable("search engine is rate limiting us")
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    results = []
-    for block in soup.select("div.result")[:MAX_RESULTS]:
-        link = block.select_one("a.result__a")
-        if not link:
-            continue
-        snippet = block.select_one(".result__snippet")
-        results.append(
-            {
-                "title": link.get_text(" ", strip=True),
-                "url": _decode_result_url(link.get("href", "")),
-                "snippet": snippet.get_text(" ", strip=True) if snippet else "",
-            }
-        )
-    return results
-
-
 def _fetch_text(url: str) -> str:
     """Readable text from a page, or "" if it cannot be fetched."""
     if any(blocked in url for blocked in SKIP_FETCH):
@@ -244,11 +202,12 @@ def _collect(person: dict) -> list:
     seen, documents = set(), []
 
     for query in _queries(person):
-        for hit in _search(query):
+        for hit in search.search(query):
             url = hit["url"]
-            if not url or url in seen:
+            key = search._normalise(url)
+            if not url or key in seen:
                 continue
-            seen.add(url)
+            seen.add(key)
 
             # The snippet is public information too, and it is all we get for
             # sites that refuse automated fetches.
@@ -382,8 +341,8 @@ def _clean(entries, documents, person: dict) -> list:
 def find(person: dict) -> tuple[list, str]:
     """(entries, profile_url). Search public sources, then structure the findings.
 
-    `profile_url` is only filled in when nothing verifiable was found, so the page
-    can offer a profile to check by hand instead of showing an empty result.
+    `profile_url` is returned on every search, so the page can always link out to
+    the person's profile - not just when nothing was extracted.
     """
     if not config.ENABLE_EXPERIENCE_SEARCH:
         log.info("Experience search is switched off")
@@ -395,10 +354,8 @@ def find(person: dict) -> tuple[list, str]:
     if not documents:
         return [], ""
 
-    entries = _structure(person, documents)
-    if entries:
-        return entries, ""
-    return [], _profile_link(person, documents)
+    # The profile link is useful either way, so always look for one.
+    return _structure(person, documents), _profile_link(person, documents)
 
 
 def lookup(person: dict, refresh: bool = False) -> tuple[list, bool, str]:

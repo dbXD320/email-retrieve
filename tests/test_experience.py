@@ -38,10 +38,11 @@ def test_saved_entries_come_back_in_order():
 
 
 def test_person_details_are_stored_alongside():
-    experience.save(PERSON, [{"company": "Acme", "role": "SDE", "source": ""}])
+    experience.save(PERSON, [{"company": "Acme", "role": "SDE", "source": ""}], profile="https://p")
     row = experience.cached(PERSON["email"])[0]
     assert row["person_name"] == "Yathaarth Sharma"
     assert row["current_company"] == "Magi"
+    assert row["profile_url"] == "https://p"
     assert row["found_at"]
 
 
@@ -142,13 +143,6 @@ def test_no_name_means_no_queries():
     assert experience._queries({"name": "", "company": "X", "email": "a@b.com"}) == []
 
 
-def test_duckduckgo_redirect_urls_are_unwrapped():
-    wrapped = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fbio&rut=x"
-    assert experience._decode_result_url(wrapped) == "https://example.com/bio"
-    assert experience._decode_result_url("//example.com/p") == "https://example.com/p"
-    assert experience._decode_result_url("https://example.com/q") == "https://example.com/q"
-
-
 def test_blocked_sites_are_not_fetched(monkeypatch):
     """Their snippets are still used, but no request is made to them."""
     monkeypatch.setattr(experience.requests, "get", lambda *a, **k: pytest.fail("fetched"))
@@ -232,14 +226,30 @@ def test_profile_link_is_returned_when_nothing_is_verifiable(monkeypatch):
     assert profile == "https://in.linkedin.com/in/yathaarth"
 
 
-def test_no_profile_link_when_experience_was_found(monkeypatch):
-    """A hit needs no fallback."""
+def test_profile_link_is_returned_even_when_experience_was_found(monkeypatch):
+    """The link is useful either way, so every search returns one."""
     docs = [{"url": "https://in.linkedin.com/in/yathaarth", "text": "at Magi"}]
     monkeypatch.setattr(experience, "_collect", lambda person: docs)
     monkeypatch.setattr(experience, "_structure", lambda person, d: [{"company": "Acme"}])
 
     entries, profile = experience.find(PERSON)
-    assert entries and profile == ""
+    assert [e["company"] for e in entries] == ["Acme"]
+    assert profile == "https://in.linkedin.com/in/yathaarth"
+
+
+def test_profile_is_stored_on_every_row_of_a_hit(monkeypatch):
+    monkeypatch.setattr(experience, "_collect", lambda person: [
+        {"url": "https://in.linkedin.com/in/yathaarth", "text": "at Magi"}
+    ])
+    monkeypatch.setattr(experience, "_structure", lambda person, d: [
+        {"company": "Acme"}, {"company": "Initech"}
+    ])
+
+    experience.lookup(PERSON)
+    rows = experience.cached(PERSON["email"])
+    assert len(rows) == 2
+    assert all(r["profile_url"] == "https://in.linkedin.com/in/yathaarth" for r in rows)
+    assert experience.profile_link(PERSON["email"]) == "https://in.linkedin.com/in/yathaarth"
 
 
 def test_corroborated_profile_wins_over_the_first_hit():
@@ -306,24 +316,42 @@ def test_the_person_can_be_retried_after_a_block(monkeypatch):
     assert (from_cache, error) == (False, "")
 
 
-def test_search_raises_on_a_202_anomaly_page(monkeypatch):
-    class Response:
-        status_code = 202
-        text = "<html>anomaly detected</html>"
-        def raise_for_status(self): pass
+def test_collect_uses_the_provider_chain(monkeypatch):
+    """experience delegates searching; it does not know about any one provider."""
+    import search as search_module
 
-    monkeypatch.setattr(experience.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(search_module, "search", lambda q: [
+        {"title": "T", "url": "https://example.com/bio", "snippet": "worked at Acme"}
+    ])
+    monkeypatch.setattr(experience, "_fetch_text", lambda url: "")
+
+    docs = experience._collect(PERSON)
+    assert [d["url"] for d in docs] == ["https://example.com/bio"]
+    assert "worked at Acme" in docs[0]["text"]
+
+
+def test_collect_deduplicates_across_queries(monkeypatch):
+    """The same page found by two different queries is fetched once."""
+    import search as search_module
+
+    monkeypatch.setattr(search_module, "search", lambda q: [
+        {"title": "T", "url": "https://example.com/bio", "snippet": "s"},
+        {"title": "T", "url": "https://example.com/bio/", "snippet": "s"},
+    ])
+    monkeypatch.setattr(experience, "_fetch_text", lambda url: "")
+
+    assert len(experience._collect(PERSON)) == 1
+
+
+def test_a_provider_outage_propagates_as_unavailable(monkeypatch):
+    import search as search_module
+
+    def blocked(q):
+        raise search_module.SearchUnavailable("all providers down")
+
+    monkeypatch.setattr(search_module, "search", blocked)
     with pytest.raises(experience.SearchUnavailable):
-        experience._search("anything")
-
-
-def test_search_raises_when_the_request_fails(monkeypatch):
-    def boom(*a, **k):
-        raise experience.requests.RequestException("no network")
-
-    monkeypatch.setattr(experience.requests, "post", boom)
-    with pytest.raises(experience.SearchUnavailable):
-        experience._search("anything")
+        experience._collect(PERSON)
 
 
 # --- searching again ---------------------------------------------------------
@@ -384,3 +412,22 @@ def test_a_failed_refresh_keeps_what_was_already_stored(monkeypatch):
     assert "rate limited" in error
     assert [e["company"] for e in entries] == ["Old"], "old results must survive"
     assert [e["company"] for e in experience.cached(PERSON["email"])] == ["Old"]
+
+
+def test_profile_link_reads_the_dedicated_column():
+    experience.save(PERSON, [{"company": "Acme"}], profile="https://in.linkedin.com/in/x")
+    assert experience.profile_link(PERSON["email"]) == "https://in.linkedin.com/in/x"
+
+
+def test_profile_link_falls_back_to_older_rows(monkeypatch):
+    """Rows written before profile_url existed kept it on the blank miss row."""
+    storage.append_csv(
+        [{
+            "person_email": PERSON["email"], "person_name": "Y", "current_company": "Magi",
+            "position": 0, "company": "", "role": "", "dates": "",
+            "source": "https://in.linkedin.com/in/legacy", "found_at": "2026-01-01",
+        }],
+        config.EXPERIENCE_PATH,
+        [f for f in storage.EXPERIENCE_FIELDNAMES if f != "profile_url"],
+    )
+    assert experience.profile_link(PERSON["email"]) == "https://in.linkedin.com/in/legacy"

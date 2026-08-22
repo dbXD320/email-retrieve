@@ -25,6 +25,7 @@ CLIENT_SECRET_PATH = _path("CLIENT_SECRET_PATH", "credentials/client_secret.json
 TOKEN_PATH = _path("TOKEN_PATH", "credentials/token.json")
 OUTPUT_PATH = _path("OUTPUT_PATH", "output/sent_emails.csv")
 EXPERIENCE_PATH = _path("EXPERIENCE_PATH", "output/experience.csv")
+SEARCH_CACHE_PATH = _path("SEARCH_CACHE_PATH", "output/search_cache.json")
 
 # Read-only is all this script needs. Changing this invalidates the cached token.
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -49,3 +50,23 @@ ENABLE_EXPERIENCE_SEARCH = os.getenv("ENABLE_EXPERIENCE_SEARCH", "true").strip()
     "true",
     "yes",
 }
+
+# Search providers, tried in this order. Only duckduckgo needs no credentials;
+# the others switch on once their key or url is set below.
+SEARCH_PROVIDERS = [
+    name.strip()
+    for name in os.getenv("SEARCH_PROVIDERS", "duckduckgo,google_cse,brave,searx").split(",")
+    if name.strip()
+]
+
+# How long to leave a provider alone after it refuses us.
+SEARCH_COOLDOWN_SECONDS = _int("SEARCH_COOLDOWN_SECONDS", 900)
+
+# How long a cached search result stays usable.
+SEARCH_CACHE_DAYS = _int("SEARCH_CACHE_DAYS", 7)
+
+# Optional provider credentials. Each one enables its provider.
+GOOGLE_CSE_KEY = os.getenv("GOOGLE_CSE_KEY", "").strip()
+GOOGLE_CSE_CX = os.getenv("GOOGLE_CSE_CX", "").strip()
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "").strip()
+SEARX_URL = os.getenv("SEARX_URL", "").strip()

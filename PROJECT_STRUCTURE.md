@@ -15,7 +15,8 @@ email-retrieve/
 ├── email_parser.py         # raw Gmail message -> recipient / subject / date / body
 ├── company.py              # guess the recipient's company from the body
 ├── storage.py              # write / read the CSVs (the caches)
-├── experience.py           # web search + fetch + LLM structuring, cached to CSV
+├── search.py               # search providers with fallback, cooldown and a query cache
+├── experience.py           # fetch + LLM structuring, cached to CSV
 ├── app.py                  # minimal Flask web view of the results
 ├── templates/
 │   ├── index.html          # the list: table, page size, pagination
@@ -122,8 +123,8 @@ A lookup runs in four steps, and the LLM only sees step 3's output:
 
 1. `_queries` - a few searches from the name, current company and email domain (a free
    provider domain is not used as a search term).
-2. `_search` - DuckDuckGo's HTML endpoint. Free, no key, no account. Result urls come
-   wrapped in a redirect, so `_decode_result_url` unwraps them.
+2. `search.search` - the provider chain (see below). Results are deduplicated by
+   normalised url, so the same page found twice is fetched once.
 3. `_fetch_text` - fetches up to 4 pages with `requests`, strips script/style/nav with
    BeautifulSoup, keeps 4000 chars each, with a courtesy delay between requests. Sites that
    block automated fetches (LinkedIn, Instagram, ...) are not fetched at all - their search
@@ -150,6 +151,26 @@ page says so and the person can be retried later. Switch the whole thing off wit
 
 Each row's **Find Experience** button posts to `/experience?email=...`, which renders the
 companies, roles, dates and a link to each source.
+
+### `search.py`
+Search behind a provider abstraction, so no single engine can break the feature.
+
+- **Order** comes from `SEARCH_PROVIDERS`. Each provider is tried in turn; a refusal
+  (rate limit, 4xx/5xx, network error, unreadable response) moves on to the next. An empty
+  result also falls through - worth a second opinion - but everyone finding nothing is
+  recorded as a real answer, not an error.
+- **Cooldown**: a provider that refuses is left alone for `SEARCH_COOLDOWN_SECONDS`
+  (default 900) rather than retried on every lookup.
+- **Query cache**: `output/search_cache.json`, keyed by query, valid for
+  `SEARCH_CACHE_DAYS`. Shared across people, so overlapping queries cost nothing and the
+  cache survives a restart.
+- **Providers**: `duckduckgo` (HTML page, free, no key, rate limits readily), `google_cse`
+  (Google Custom Search JSON API, 100/day free, needs `GOOGLE_CSE_KEY` + `GOOGLE_CSE_CX`),
+  `brave` (`BRAVE_API_KEY`), `searx` (`SEARX_URL`, an instance with JSON enabled). Each one
+  enables itself once its credentials exist; `search.status()` reports what is usable.
+
+Nothing here tries to disguise itself as a browser or evade a provider's limits - a refusal
+is taken at face value and the next provider is used.
 
 ### `tests/`
 Two pytest files covering the logic that's actually easy to get wrong, using hardcoded

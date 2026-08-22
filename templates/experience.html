@@ -18,6 +18,14 @@
       <div><span class="k">Name</span><span>{{ person.name }}</span></div>
       <div><span class="k">Current company</span><span>{{ person.company or '—' }}</span></div>
       <div><span class="k">Email</span><span>{{ person.email }}</span></div>
+      <div>
+        <span class="k">Profile</span>
+        <span>
+          {% if profile %}
+            <a href="{{ profile }}" target="_blank" rel="noopener">{{ profile }}</a>
+          {% else %}<span class="blank">none found</span>{% endif %}
+        </span>
+      </div>
     </div>
 
     <div class="bar">
@@ -61,7 +69,8 @@
       </table>
       <p class="meta" style="margin-top:1rem">
         Most recent previous role first, from <code>{{ store_path }}</code>. A dash means the
-        sources did not state it - nothing here is guessed.
+        sources did not state it - nothing here is guessed. Names are not unique, so check
+        the profile link belongs to the right person.
       </p>
 
     {% elif error %}
@@ -78,16 +87,9 @@
       </p>
 
       {% if profile %}
-        <div class="kv">
-          <div>
-            <span class="k">Likely profile</span>
-            <span><a href="{{ profile }}" target="_blank" rel="noopener">{{ profile }}</a></span>
-          </div>
-        </div>
         <p class="meta">
-          Found in the search results but not readable automatically, so nothing was
-          extracted from it. Worth a look by hand - and it may be a different person with
-          the same name.
+          The profile above came from the search results but could not be read
+          automatically, so nothing was extracted from it. Worth a look by hand.
         </p>
       {% endif %}
     {% endif %}

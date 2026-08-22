@@ -25,11 +25,13 @@ FIELDNAMES = [
 
 # One row per company a person worked at. `position` is the order, 1 = most
 # recent previous role, counting backwards. A single row with an empty `company`
-# means "searched, found nothing" so the search is not repeated.
+# means "searched, found nothing" so the search is not repeated. `profile_url` is
+# the person's public profile, recorded on every row whether roles were found or not.
 EXPERIENCE_FIELDNAMES = [
     "person_email",
     "person_name",
     "current_company",
+    "profile_url",
     "position",
     "company",
     "role",
@@ -70,14 +72,33 @@ def read_rows(path) -> list:
         return list(csv.DictReader(handle))
 
 
+def _header_of(path: Path):
+    """The header currently in the file, or None if there is no usable one."""
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            return next(csv.reader(handle), None)
+    except (OSError, StopIteration):
+        return None
+
+
 def append_csv(rows, path, fieldnames) -> Path:
-    """Append rows, writing the header first if the file is new."""
+    """Append rows, writing the header first if the file is new.
+
+    If the file was written with a different set or order of columns, it is read
+    and rewritten whole - appending under a stale header would silently shift
+    every value into the wrong column.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    new_file = not path.exists() or path.stat().st_size == 0
+
+    existing_header = _header_of(path) if path.exists() and path.stat().st_size else None
+    if existing_header and existing_header != list(fieldnames):
+        log.info("Column layout of %s changed, rewriting it", path)
+        return write_csv(list(read_rows(path)) + list(rows), path, fieldnames)
+
     with open(path, "a", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-        if new_file:
+        if existing_header is None:
             writer.writeheader()
         for row in rows:
             writer.writerow(row)
