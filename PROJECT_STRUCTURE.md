@@ -14,16 +14,20 @@ email-retrieve/
 ├── gmail_client.py         # Gmail API auth + fetching sent messages
 ├── email_parser.py         # raw Gmail message -> recipient / subject / date / body
 ├── company.py              # guess the recipient's company from the body
-├── storage.py              # write / read the CSV (the cache)
+├── storage.py              # write / read the CSVs (the caches)
+├── experience.py           # previous-work-experience store (search not built yet)
 ├── app.py                  # minimal Flask web view of the results
 ├── templates/
-│   └── index.html          # the one page: table, page size, pagination
+│   ├── index.html          # the list: table, page size, pagination
+│   └── experience.html     # one person's previous roles
+├── static/
+│   └── style.css           # shared styles for both pages
 ├── requirements.txt        # dependencies
 ├── .env                    # settings: paths, message limit, date filter (gitignored)
 ├── .gitignore              # venv/, .env, credentials/, output/
 ├── README.md               # setup + how to run
 ├── credentials/            # Google OAuth client secret + cached token (gitignored)
-├── output/                 # generated CSV (gitignored)
+├── output/                 # generated CSVs: sent_emails.csv, experience.csv (gitignored)
 └── tests/
     ├── test_email_parser.py
     └── test_company.py
@@ -107,6 +111,24 @@ A one-route Flask app that **processes on demand**, page by page:
   is shown in italics to distinguish it from a real one.
 
 Start it with `python app.py` and open http://127.0.0.1:5000.
+
+### `experience.py`
+Previous work experience per person, cached in `output/experience.csv` - one row per
+company, `position` 1 = most recent previous role:
+
+    person_email, person_name, current_company, position, company, role, source, found_at
+
+- `cached(email)` - stored entries, ordered. `searched(email)` - whether they were tried.
+- `save(person, entries)` - appends. An empty `entries` writes one blank row, so a person
+  who genuinely has nothing found is not searched again.
+- `find(person)` - **the seam, not implemented yet.** It should return
+  `{company, role, source}` in order, most recent first; `lookup` then stores it and the
+  page renders it. Until then `lookup` catches the `NotImplementedError` and the page
+  explains what is missing.
+
+Each row's **Find Experience** button posts to `/experience?email=...`, which shows stored
+results if present, "searched, nothing found" if that was the outcome, and otherwise the
+name / current company / email a lookup will be given.
 
 ### `tests/`
 Two pytest files covering the logic that's actually easy to get wrong, using hardcoded

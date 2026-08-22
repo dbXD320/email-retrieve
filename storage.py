@@ -23,6 +23,21 @@ FIELDNAMES = [
 ]
 
 
+# One row per company a person worked at. `position` is the order, 1 = most
+# recent previous role, counting backwards. A single row with an empty `company`
+# means "searched, found nothing" so the search is not repeated.
+EXPERIENCE_FIELDNAMES = [
+    "person_email",
+    "person_name",
+    "current_company",
+    "position",
+    "company",
+    "role",
+    "source",
+    "found_at",
+]
+
+
 def write_csv(rows, path, fieldnames=None) -> Path:
     """Write dict rows to `path` as CSV, creating the parent directory."""
     path = Path(path)
@@ -52,3 +67,18 @@ def read_rows(path) -> list:
         return []
     with open(path, newline="", encoding="utf-8-sig") as handle:
         return list(csv.DictReader(handle))
+
+
+def append_csv(rows, path, fieldnames) -> Path:
+    """Append rows, writing the header first if the file is new."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not path.exists() or path.stat().st_size == 0
+    with open(path, "a", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        if new_file:
+            writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    log.info("Appended %s rows to %s", len(rows), path)
+    return path

@@ -1,0 +1,67 @@
+:root {
+  --bg: #ffffff; --fg: #1a1a1a; --muted: #767676;
+  --line: #e2e2e2; --head: #f7f7f7; --accent: #1a56c4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c; --fg: #e8e8e8; --muted: #9a9a9a;
+    --line: #2c2f36; --head: #1d2025; --accent: #7aa2f7;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; }
+h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+.meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.25rem; }
+.bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+.sizes { display: flex; gap: .35rem; align-items: center; font-size: .85rem; }
+.sizes span { color: var(--muted); }
+a { color: var(--accent); text-decoration: none; }
+.chip {
+  display: inline-block; padding: .2rem .55rem; border: 1px solid var(--line);
+  border-radius: 5px; font-size: .85rem;
+}
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.off { color: var(--muted); pointer-events: none; opacity: .45; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--line);
+}
+th {
+  background: var(--head); font-size: .75rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); font-weight: 600;
+}
+td.blank, .derived { color: var(--muted); }
+.derived { font-style: italic; }
+tbody tr:hover td { background: var(--head); }
+.pager {
+  display: flex; align-items: center; gap: .5rem; margin-top: 1rem;
+  font-size: .85rem; color: var(--muted);
+}
+.empty { padding: 2rem 0; color: var(--muted); }
+.note {
+  padding: .5rem .7rem; border-radius: 6px; font-size: .85rem;
+  border: 1px solid var(--line); margin-bottom: .9rem;
+}
+.note.ok { border-color: var(--accent); }
+code { background: var(--head); padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
+
+/* --- row action button and the experience page --- */
+.btn {
+  font: inherit; font-size: .8rem; padding: .25rem .6rem; cursor: pointer;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+td.action { text-align: right; width: 1%; white-space: nowrap; }
+.kv { margin: 0 0 1.25rem; }
+.kv div { display: flex; gap: .6rem; padding: .35rem 0; border-bottom: 1px solid var(--line); }
+.kv dt, .kv .k { color: var(--muted); min-width: 8rem; font-size: .85rem; }
+.todo { margin: .4rem 0 0 1.1rem; padding: 0; color: var(--muted); font-size: .85rem; }
+.todo li { margin: .2rem 0; }

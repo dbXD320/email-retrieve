@@ -12,6 +12,7 @@ import math
 from flask import Flask, render_template, request
 
 import config
+import experience as experience_store
 import main
 import storage
 
@@ -61,7 +62,15 @@ def index():
 
     return render_template(
         "index.html",
-        rows=[(*display_name(r), r.get("company") or "") for r in visible],
+        rows=[
+            {
+                "name": display_name(r)[0],
+                "derived": display_name(r)[1],
+                "company": r.get("company") or "",
+                "email": r.get("recipient_email") or "",
+            }
+            for r in visible
+        ],
         page=page,
         pages=pages,
         size=size,
@@ -73,6 +82,44 @@ def index():
         added=max(0, len(rows) - stored_before),
         exhausted=exhausted,
         locked=locked,
+    )
+
+
+@app.route("/experience")
+def experience():
+    """Show a person's previous roles, from the experience CSV.
+
+    The search itself is not built yet (see experience.find), so for anyone not
+    already in the CSV this shows what a lookup will be given.
+    """
+    email = (request.args.get("email") or "").strip().lower()
+    back = request.args.get("back") or "/"
+
+    row = next(
+        (r for r in storage.read_rows(config.OUTPUT_PATH)
+         if (r.get("recipient_email") or "").strip().lower() == email),
+        None,
+    )
+    person = {
+        "name": display_name(row)[0] if row else email or "Unknown",
+        "company": (row or {}).get("company") or "",
+        "email": email,
+    }
+
+    entries, from_cache = experience_store.lookup(person)
+    app.logger.info(
+        "Experience for %s: %s entries%s", email, len(entries), " (cached)" if from_cache else ""
+    )
+
+    return render_template(
+        "experience.html",
+        person=person,
+        found=row is not None,
+        back=back,
+        entries=entries,
+        from_cache=from_cache,
+        searched=experience_store.searched(email),
+        store_path=config.EXPERIENCE_PATH,
     )
 
 

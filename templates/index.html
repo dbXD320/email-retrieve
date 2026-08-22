@@ -4,61 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sent Emails</title>
-  <style>
-    :root {
-      --bg: #ffffff; --fg: #1a1a1a; --muted: #767676;
-      --line: #e2e2e2; --head: #f7f7f7; --accent: #1a56c4;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #16181c; --fg: #e8e8e8; --muted: #9a9a9a;
-        --line: #2c2f36; --head: #1d2025; --accent: #7aa2f7;
-      }
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
-      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
-    main { max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
-    .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.25rem; }
-    .bar {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem;
-    }
-    .sizes { display: flex; gap: .35rem; align-items: center; font-size: .85rem; }
-    .sizes span { color: var(--muted); }
-    a { color: var(--accent); text-decoration: none; }
-    .chip {
-      display: inline-block; padding: .2rem .55rem; border: 1px solid var(--line);
-      border-radius: 5px; font-size: .85rem;
-    }
-    .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .chip.off { color: var(--muted); pointer-events: none; opacity: .45; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-      text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--line);
-    }
-    th {
-      background: var(--head); font-size: .75rem; text-transform: uppercase;
-      letter-spacing: .04em; color: var(--muted); font-weight: 600;
-    }
-    td.blank, .derived { color: var(--muted); }
-    .derived { font-style: italic; }
-    tbody tr:hover td { background: var(--head); }
-    .pager {
-      display: flex; align-items: center; gap: .5rem; margin-top: 1rem;
-      font-size: .85rem; color: var(--muted);
-    }
-    .empty { padding: 2rem 0; color: var(--muted); }
-    .note {
-      padding: .5rem .7rem; border-radius: 6px; font-size: .85rem;
-      border: 1px solid var(--line); margin-bottom: .9rem;
-    }
-    .note.ok { border-color: var(--accent); }
-    code { background: var(--head); padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <main>
@@ -98,13 +44,20 @@
 
     <table>
       <thead>
-        <tr><th>Recipient Name</th><th>Company</th></tr>
+        <tr><th>Recipient Name</th><th>Company</th><th></th></tr>
       </thead>
       <tbody>
-        {% for name, derived, company in rows %}
+        {% for row in rows %}
           <tr>
-            <td{% if derived %} class="derived"{% endif %}>{{ name }}</td>
-            <td{% if not company %} class="blank"{% endif %}>{{ company or '—' }}</td>
+            <td{% if row.derived %} class="derived"{% endif %}>{{ row.name }}</td>
+            <td{% if not row.company %} class="blank"{% endif %}>{{ row.company or '—' }}</td>
+            <td class="action">
+              <form action="{{ url_for('experience') }}" method="get">
+                <input type="hidden" name="email" value="{{ row.email }}">
+                <input type="hidden" name="back" value="?size={{ size }}&page={{ page }}">
+                <button class="btn" type="submit">Find Experience</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
       </tbody>

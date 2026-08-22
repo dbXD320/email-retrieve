@@ -24,6 +24,7 @@ def _int(name: str, default: int) -> int:
 CLIENT_SECRET_PATH = _path("CLIENT_SECRET_PATH", "credentials/client_secret.json")
 TOKEN_PATH = _path("TOKEN_PATH", "credentials/token.json")
 OUTPUT_PATH = _path("OUTPUT_PATH", "output/sent_emails.csv")
+EXPERIENCE_PATH = _path("EXPERIENCE_PATH", "output/experience.csv")
 
 # Read-only is all this script needs. Changing this invalidates the cached token.
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]

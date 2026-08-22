@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experience &middot; {{ person.name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main>
+  <h1>{{ person.name }}</h1>
+  <p class="meta"><a href="{{ back }}">&lsaquo; Back to the list</a></p>
+
+  {% if not found %}
+    <p class="note">No stored row for <code>{{ person.email }}</code>.</p>
+  {% else %}
+    <div class="kv">
+      <div><span class="k">Name</span><span>{{ person.name }}</span></div>
+      <div><span class="k">Current company</span><span>{{ person.company or '—' }}</span></div>
+      <div><span class="k">Email</span><span>{{ person.email }}</span></div>
+    </div>
+
+    {% if entries %}
+      <table>
+        <thead>
+          <tr><th>#</th><th>Company</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+            <tr>
+              <td>{{ entry.position }}</td>
+              <td>{{ entry.company }}</td>
+              <td{% if not entry.role %} class="blank"{% endif %}>{{ entry.role or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="meta" style="margin-top:1rem">
+        Most recent previous role first, from <code>{{ store_path }}</code>.
+      </p>
+
+    {% elif searched %}
+      <p class="note">Searched before and nothing was found. Stored, so it is not retried.</p>
+
+    {% else %}
+      <p class="note">
+        Experience search is not built yet - this button is wired up and the store is ready,
+        but nothing searches the web so far. The three values above are what will be passed in.
+      </p>
+
+      <p class="meta" style="margin-bottom:.2rem">Still to build:</p>
+      <ul class="todo">
+        <li>implement <code>experience.find(person)</code> to search public sources</li>
+        <li>return <code>{company, role, source}</code> in order, most recent first</li>
+        <li>results save to <code>{{ store_path }}</code> automatically and show here</li>
+      </ul>
+    {% endif %}
+  {% endif %}
+</main>
+</body>
+</html>
