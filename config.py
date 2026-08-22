@@ -33,3 +33,11 @@ MAX_MESSAGES = _int("MAX_MESSAGES", 5)
 
 # Optional Gmail date filter, YYYY/MM/DD. Empty means all sent mail.
 AFTER_DATE = os.getenv("AFTER_DATE", "").strip()
+
+# Company extraction: ask the LLM only when the text rules find nothing.
+ENABLE_LLM_FALLBACK = os.getenv("ENABLE_LLM_FALLBACK", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or "gpt-4o-mini"

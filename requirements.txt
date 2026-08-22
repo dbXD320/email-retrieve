@@ -2,4 +2,5 @@ google-api-python-client
 google-auth-oauthlib
 python-dotenv
 beautifulsoup4
+openai
 pytest

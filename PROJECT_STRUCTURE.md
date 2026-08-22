@@ -59,15 +59,27 @@ Turns one raw Gmail message dict into a small plain dict:
 This is the only file that knows Gmail's JSON shape.
 
 ### `company.py`
-Best-effort company guess from the parsed email, in priority order:
-1. **Signature block** — last few lines of the body ("Regards, Asha — Acme Pvt Ltd").
-2. **Body mentions** — regex for names followed by a legal suffix (Inc, Ltd, Pvt Ltd, LLP,
-   GmbH), or phrases like "at <Company>" / "team at <Company>".
-3. **Email domain fallback** — `asha@acme.com` -> `Acme`, skipped for free providers
-   (gmail, yahoo, outlook, etc.).
+Best-effort company guess, three rules in priority order, stopping at the first hit:
 
-Returns the company name (or empty string) plus which rule matched, so I can eyeball the
-quality of the guesses in the CSV.
+1. **`content`** - the company named in the subject, body, or quoted reply, matched
+   against the recipient's email domain so a short form (`Truva`) or a full name
+   (`InMobi Technologies`) both work. Matching against the domain is what stops
+   "BITS Pilani" - named in every one of these emails - from being returned as the
+   recipient's employer. Hits inside an address or URL are ignored, and a name only ever
+   seen lower-case gets capitalised.
+2. **`pattern`** - the known sentence shape: `...opportunities at <Company>.` Anchored on
+   a role keyword (opportunities, role, position, internship, opening, team), falling back
+   to the last 2-3 meaningful words after the final `at` in a sentence. Sentences whose
+   `at` follows a self-description (`student at`, `worked at`) are skipped - those describe
+   the sender.
+3. **`llm`** - ask OpenAI, sending **only** the recipient's address and the first 3
+   non-empty lines of the body. Never the full body. Returns the company name or `null`.
+   Answers are cached per corporate domain, so one company costs one call however many
+   people you mailed there. Gated by `ENABLE_LLM_FALLBACK`; if no credentials are
+   configured it logs once, disables itself, and the run continues on rules 1-2.
+
+Returns `(company, source)`, and `source` lands in the CSV as `company_source` so I can
+eyeball which rule produced each guess.
 
 ### `storage.py`
 Writes the collected rows to `output/sent_emails.csv` with a fixed header:
@@ -86,7 +98,7 @@ Google Cloud Console) and the generated `token.json`; `output/` holds the CSV.
 
 ## Dependencies (`requirements.txt`)
 `google-api-python-client`, `google-auth-oauthlib`, `python-dotenv`, `beautifulsoup4`
-(HTML body fallback), `pytest`.
+(HTML body fallback), `openai` (rule 3), `pytest`.
 
 ## Flow
 ```
