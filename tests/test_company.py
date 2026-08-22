@@ -214,3 +214,58 @@ def test_thread_extraction_calls_the_llm_once(stub_llm):
 
     assert company.guess_by_thread(rows) == {"T1": ("Contoso", "llm")}
     assert len(stub_llm) == 1, "one call for the whole thread"
+
+
+# --- regressions from real mail ---------------------------------------------
+
+REAL_BODY = (
+    "Dear Moses,\n\nI hope you're doing well.\n\n"
+    "I'm a pre-final year student at BITS Pilani pursuing a dual degree in\n"
+    "Mechanical Engineering and Mathematics. *SSS Defence** recently visited our\n"
+    "campus, but I was unfortunately ineligible due to CGPA constraints.*\n\n"
+    "During my ML internship at a startup, I worked on building data and LLM\n"
+    "pipelines handling 30k+ records and 100k+ structured entries."
+)
+
+
+def test_generic_words_are_never_a_company():
+    """'startup, I' came out of 'my ML internship at a startup, I worked on...'."""
+    got = company.guess(row(email="hr@unrelated.xyz", body=REAL_BODY))
+    assert got == ("", "")
+
+
+def test_a_spaced_out_domain_still_matches():
+    """Domain 'sssdefence', body writes 'SSS Defence'."""
+    got = company.guess(row(email="moses@sssdefence.com", body=REAL_BODY))
+    assert got == ("SSS Defence", "content")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "I had an internship at a startup, I learned a lot.",
+        "I am applying for a role at your company, thanks.",
+        "We work out of an office at home.",
+    ],
+)
+def test_generic_nouns_rejected(body):
+    assert company.guess(row(body=body)) == ("", "")
+
+
+def test_a_candidate_does_not_cross_a_comma():
+    got = company.guess(row(body="Applying for openings at Acme, which looks great."))
+    assert got == ("Acme", "pattern")
+
+
+def test_possessive_marks_the_senders_own_history():
+    assert company.guess(row(body="During my internship at Foobar I built things.")) == ("", "")
+
+
+def test_i_saw_the_opening_is_still_about_them():
+    """Only possessives mean 'mine' - 'I saw the opening at Acme' is their company."""
+    assert company.guess(row(body="I saw the opening at Acme and applied.")) == ("Acme", "pattern")
+
+
+def test_a_trailing_pronoun_is_trimmed():
+    got, _ = company.guess(row(body="I saw the opening at Acme I applied quickly."))
+    assert got == "Acme"

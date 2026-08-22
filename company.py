@@ -45,15 +45,30 @@ ROLE_AT = re.compile(
 # "student at X", "interning at X" describe the sender, not the recipient.
 SELF_CONTEXT = {
     "student", "studying", "study", "intern", "interned", "interning",
+    "internship", "internships", "role", "job", "stint", "time",
     "work", "working", "worked", "employed", "based", "graduated",
     "graduating", "enrolled", "am", "was",
 }
+
+# Generic nouns that are never the answer, however the sentence is phrased.
+GENERIC = {
+    "startup", "startups", "company", "companies", "firm", "agency", "client",
+    "clients", "organisation", "organization", "university", "college", "school",
+    "institute", "home", "office", "team", "college.", "present",
+}
+
+# Possessives mark the sender's own history: "my internship at ...".
+# Deliberately not "I"/"we" - "I saw the opening at Acme" is about them.
+SELF_REFERENCE = re.compile(r"\b(?:my|our|mine|ours)\b", re.IGNORECASE)
+
+# A name written with spaces, so a domain like "sssdefence" can match "SSS Defence".
+CAPITALISED_PHRASE = re.compile(r"\b[A-Z][A-Za-z&.\-]*(?:\s+[A-Z][A-Za-z&.\-]*){0,3}")
 
 # Words that are never a company name on their own.
 STOPWORDS = {
     "the", "a", "an", "your", "you", "their", "our", "my", "his", "her", "its",
     "this", "that", "these", "those", "any", "some", "such", "and", "or",
-    "present", "least", "most", "all", "both",
+    "present", "least", "most", "all", "both", "i",
 }
 
 
@@ -105,6 +120,12 @@ def _from_content(parsed: dict):
             return _tidy_name(text)  # written as a name, keep that spelling
         lowercase_match = lowercase_match or text
 
+    # "sssdefence" written as "SSS Defence": compare squashed capitalised phrases.
+    for match in CAPITALISED_PHRASE.finditer(haystack):
+        phrase = match.group(0)
+        if re.sub(r"[^a-z0-9]", "", phrase.lower()) == token:
+            return _tidy_name(phrase)
+
     # Only ever seen lower-case, e.g. in a signature URL - capitalise it.
     return _tidy_name(lowercase_match.title()) if lowercase_match else None
 
@@ -124,20 +145,32 @@ def _tidy_name(name: str) -> str:
 
 
 def _trim_trailing_words(name: str) -> str:
-    """Drop trailing all-lowercase words: "Contoso listed" -> "Contoso".
+    """Drop trailing filler: "Contoso listed" and "Acme I" -> "Contoso"/"Acme".
 
     Uses islower() rather than the first character, so "eBay" survives, and never
     empties the name.
     """
     words = name.split()
-    while len(words) > 1 and words[-1].islower():
+    while len(words) > 1 and (
+        words[-1].islower() or words[-1].strip(".,").lower() in STOPWORDS
+    ):
         words.pop()
     return " ".join(words)
 
 
+def _clip_at_clause(text: str) -> str:
+    """Cut at the first comma or similar - a name does not span a clause break."""
+    return re.split(r"[,;:()]", text, maxsplit=1)[0]
+
+
 def _looks_like_name(name: str) -> bool:
-    """A company name has a capital letter and is not a whole sentence."""
-    return bool(name) and len(name.split()) <= 4 and any(c.isupper() for c in name)
+    """A capitalised, short, non-generic candidate."""
+    if not name or len(name.split()) > 4:
+        return False
+    if not any(c.isupper() for c in name):
+        return False
+    words = [w.strip(".,").lower() for w in name.split()]
+    return not all(word in GENERIC or word in STOPWORDS for word in words)
 
 
 def _tail_after_at(sentence: str):
@@ -146,12 +179,16 @@ def _tail_after_at(sentence: str):
     if len(parts) < 2:
         return None
 
-    # "...student at BITS Pilani" is about me, not the recipient.
-    before = parts[-2].split()
-    if before and before[-1].lower().strip(",;:") in SELF_CONTEXT:
+    # "...student at BITS Pilani", "my internship at ..." are about me.
+    before = parts[-2]
+    words = before.split()
+    if words and words[-1].lower().strip(",;:") in SELF_CONTEXT:
+        return None
+    if SELF_REFERENCE.search(" ".join(words[-4:])):
         return None
 
-    candidate = _trim_trailing_words(_tidy_name(" ".join(parts[-1].split()[:3])))
+    candidate = _trim_trailing_words(_tidy_name(_clip_at_clause(parts[-1])))
+    candidate = " ".join(candidate.split()[:3])
     return candidate if _looks_like_name(candidate) else None
 
 
@@ -161,11 +198,13 @@ def _from_pattern(parsed: dict):
 
     match = ROLE_AT.search(body)
     if match:
-        # Keep only the leading name-like words: "Magi" from "Magi I am open to".
-        candidate = _tidy_name(" ".join(_tidy_name(match.group("company")).split()[:3]))
-        candidate = _trim_trailing_words(candidate)
-        if _looks_like_name(candidate):
-            return candidate
+        # "my ML internship at a startup" is the sender's history, not theirs.
+        lead = body[max(0, match.start() - 40) : match.start("company")]
+        if not SELF_REFERENCE.search(lead):
+            candidate = _tidy_name(_clip_at_clause(match.group("company")))
+            candidate = _trim_trailing_words(" ".join(candidate.split()[:3]))
+            if _looks_like_name(candidate):
+                return candidate
 
     # No keyword matched: try the last "at" of each sentence that has one.
     for sentence in re.split(r"(?<=[.!?])\s+|\n", body):
