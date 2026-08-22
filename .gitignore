@@ -5,3 +5,4 @@ __pycache__/
 DEVELOPMENT_PLAN.md
 credentials/
 output/
+tests/fixtures/
