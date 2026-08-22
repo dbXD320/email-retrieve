@@ -26,6 +26,15 @@ venv\Scripts\python.exe main.py
 First run opens a browser for consent and caches the token to `credentials/token.json`;
 later runs are silent. Output lands in `output/sent_emails.csv`.
 
+## Browse the results
+
+```
+venv\Scripts\python.exe app.py
+```
+
+Then open http://127.0.0.1:5000 - a table of recipient and company, 10/20/50 per page.
+It reads the CSV, so re-run `main.py` to refresh what it shows.
+
 ## Tests
 
 ```

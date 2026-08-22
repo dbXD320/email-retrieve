@@ -40,3 +40,12 @@ def write_csv(rows, path, fieldnames=None) -> Path:
 def write_rows(rows, path) -> Path:
     """Write the final results using the standard headings."""
     return write_csv(rows, path, FIELDNAMES)
+
+
+def read_rows(path) -> list:
+    """Read back a CSV written by write_rows. Empty list if it is not there yet."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        return list(csv.DictReader(handle))

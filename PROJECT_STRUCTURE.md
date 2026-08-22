@@ -14,7 +14,10 @@ email-retrieve/
 ├── gmail_client.py         # Gmail API auth + fetching sent messages
 ├── email_parser.py         # raw Gmail message -> recipient / subject / date / body
 ├── company.py              # guess the recipient's company from the body
-├── storage.py              # write results to CSV
+├── storage.py              # write / read the CSV
+├── app.py                  # minimal Flask web view of the results
+├── templates/
+│   └── index.html          # the one page: table, page size, pagination
 ├── requirements.txt        # dependencies
 ├── .env                    # settings: paths, message limit, date filter (gitignored)
 ├── .gitignore              # venv/, .env, credentials/, output/
@@ -85,6 +88,21 @@ eyeball which rule produced each guess.
 Writes the collected rows to `output/sent_emails.csv` with a fixed header:
 `recipient_name, recipient_email, subject, sent_date, company, company_source`.
 Opens the file once and streams rows.
+
+### `app.py` and `templates/index.html`
+A one-route Flask app for browsing the results:
+
+- Reads `output/sent_emails.csv` via `storage.read_rows` - **no Gmail or LLM calls**, so a
+  page renders in a couple of milliseconds. Run `main.py` to refresh the data.
+- Table of two columns only: recipient name and company.
+- Page size 10 / 20 / 50 and first/prev/next/last pagination, both plain links with
+  `?size=&page=` - no JavaScript, no build step.
+- Bad or missing query params are clamped rather than erroring; an absent CSV shows a
+  "run main.py" message instead of a stack trace.
+- Most sent mail has no display name in the `To` header, so a name derived from the address
+  is shown in italics to distinguish it from a real one.
+
+Start it with `python app.py` and open http://127.0.0.1:5000.
 
 ### `tests/`
 Two pytest files covering the logic that's actually easy to get wrong, using hardcoded

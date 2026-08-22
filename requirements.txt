@@ -3,4 +3,5 @@ google-auth-oauthlib
 python-dotenv
 beautifulsoup4
 openai
+flask
 pytest
