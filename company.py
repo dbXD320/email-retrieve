@@ -6,7 +6,7 @@ Rules run in priority order and stop at the first hit:
               recipient's email domain so a short form or a full name both work
 2. pattern  - "... opportunities at <Company>." and similar sentences, falling
               back to the last few meaningful words after "at"
-3. llm      - ask OpenAI, sending only the address and the first 3 body lines
+3. llm      - ask OpenAI, sending only the address and the 3rd non-empty body line
 """
 
 import logging
@@ -162,9 +162,10 @@ def _from_pattern(parsed: dict):
 # --- rule 3: ask the LLM ----------------------------------------------------
 
 SYSTEM_PROMPT = (
-    "You identify which company a person belongs to. "
+    "You are given an email address and one line from a message sent to that "
+    "address. Identify which company the recipient belongs to. "
     "Reply with the company name only, nothing else. "
-    "Reply with exactly null if you cannot determine it."
+    "Reply with exactly null if the line names no recognisable company."
 )
 
 _llm_client = None
@@ -190,9 +191,13 @@ def _client():
     return _llm_client
 
 
-def _first_lines(body: str, count: int = 3) -> str:
+def _third_line(body: str) -> str:
+    """The 3rd non-empty line of the body - where these emails name the company.
+
+    Empty when the body has fewer than three non-empty lines.
+    """
     lines = [line.strip() for line in body.splitlines() if line.strip()]
-    return "\n".join(lines[:count])
+    return lines[2] if len(lines) >= 3 else ""
 
 
 def _ask(client, prompt: str) -> str:
@@ -224,7 +229,11 @@ def _ask(client, prompt: str) -> str:
 
 
 def _from_llm(parsed: dict):
-    """Ask the LLM, sending only the address and the first 3 lines of the body."""
+    """Ask the LLM, sending only the address and the 3rd non-empty body line.
+
+    A null answer means the line named nothing recognisable; rules 1 and 2 have
+    already run by this point, so the result simply stays blank.
+    """
     if not config.ENABLE_LLM_FALLBACK:
         return None
 
@@ -234,17 +243,17 @@ def _from_llm(parsed: dict):
     if not email:
         return None
 
+    line = _third_line(parsed.get("body", ""))
+    if not line:
+        return None  # nothing worth sending
+
     domain = _domain(email)
     # One company per corporate domain, so ask once and reuse the answer.
     cacheable = bool(domain) and domain not in FREE_DOMAINS
     if cacheable and domain in _llm_cache:
         return _llm_cache[domain]
 
-    prompt = (
-        f"Email address: {email}\n"
-        f"First lines of a message sent to them:\n"
-        f"{_first_lines(parsed.get('body', ''))}"
-    )
+    prompt = f"Email: {email}\nLine: {line}"
 
     client = _client()
     if client is None:
