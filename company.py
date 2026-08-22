@@ -7,6 +7,10 @@ Rules run in priority order and stop at the first hit:
 2. pattern  - "... opportunities at <Company>." and similar sentences, falling
               back to the last few meaningful words after "at"
 3. llm      - ask OpenAI, sending only the address and the 3rd non-empty body line
+
+Extraction happens once per Gmail thread: `guess_by_thread` picks each thread's
+earliest email, runs the rules on that one, and the rest of the thread reuses the
+answer. `guess` handles a single email if you need it directly.
 """
 
 import logging
@@ -309,31 +313,58 @@ def guess(parsed: dict) -> tuple[str, str]:
     return "", ""
 
 
+def guess_by_thread(rows: list) -> dict:
+    """Map thread_id -> (company, source), extracting once per Gmail thread.
+
+    A thread is one conversation, so the company is taken from its first email -
+    the earliest by internal_date, which is the one carrying the original text -
+    and every other email in that thread reuses it. Gmail hands us messages
+    newest first, hence the explicit sort rather than first-seen.
+    """
+    threads = {}
+    for row in rows:
+        threads.setdefault(row.get("thread_id", ""), []).append(row)
+
+    results = {}
+    for thread_id, group in threads.items():
+        first = min(group, key=lambda r: (r.get("internal_date", 0), r.get("message_id", "")))
+        results[thread_id] = guess(first)
+        if len(group) > 1:
+            log.info(
+                "Thread %s: %s emails, company %r from %s",
+                thread_id,
+                len(group),
+                results[thread_id][0],
+                first.get("sent_date"),
+            )
+    return results
+
+
 if __name__ == "__main__":
-    # Extraction check: writes the guessed company per message to a CSV.
+    # Extraction check: one company per thread, written to a CSV.
     import email_parser
     import gmail_client
     import storage
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    rows = []
-    for message in gmail_client.fetch_sent_messages(gmail_client.get_service()):
-        parsed = email_parser.parse(message)
-        found, source = guess(parsed)
-        rows.append(
-            {
-                **parsed,
-                "company": found,
-                "company_source": source,
-                "body_preview": " ".join(parsed["body"].split())[:120],
-            }
-        )
+    rows = [
+        email_parser.parse(message)
+        for message in gmail_client.fetch_sent_messages(gmail_client.get_service())
+    ]
+
+    companies = guess_by_thread(rows)
+    for row in rows:
+        found, source = companies.get(row["thread_id"], ("", ""))
+        row["company"] = found
+        row["company_source"] = source
+        row["body_preview"] = " ".join(row["body"].split())[:120]
 
     out = storage.write_csv(
         rows,
         config.OUTPUT_PATH.with_name("step5_companies.csv"),
         [
+            "thread_id",
             "recipient_name",
             "recipient_email",
             "subject",
@@ -344,4 +375,7 @@ if __name__ == "__main__":
         ],
     )
     hits = sum(1 for r in rows if r["company"])
-    print(f"\n{hits}/{len(rows)} messages got a company -> {out}")
+    print(
+        f"{len(rows)} emails in {len(companies)} threads, "
+        f"{hits} with a company -> {out}"
+    )

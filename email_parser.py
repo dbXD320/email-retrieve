@@ -139,6 +139,9 @@ def parse(message: dict) -> dict:
 
     return {
         "message_id": message.get("id", ""),
+        "thread_id": message.get("threadId", ""),
+        # Epoch ms: orders messages within a thread precisely, unlike sent_date.
+        "internal_date": int(message.get("internalDate") or 0),
         "recipient_name": name,
         "recipient_email": address,
         "subject": _decode_header(headers.get("subject", "")),
