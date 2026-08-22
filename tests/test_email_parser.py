@@ -186,3 +186,19 @@ def test_real_payloads_all_parse(real_payloads):
         assert parsed["recipient_email"], f"{name}: no recipient"
         assert parsed["sent_date"], f"{name}: no date"
         assert parsed["thread_id"], f"{name}: no thread id"
+
+
+def test_display_name_is_taken_from_the_to_header_verbatim():
+    """The header's display name wins; nothing is derived from the address."""
+    parsed = email_parser.parse(
+        simple_message("hi", to="Yathaarth Sharma <yathaarth@gmail.com>")
+    )
+    assert parsed["recipient_name"] == "Yathaarth Sharma"
+    assert parsed["recipient_email"] == "yathaarth@gmail.com"
+
+
+def test_bare_address_leaves_the_name_empty_for_the_caller_to_handle():
+    """No display name in the header means no name here - the app decides what to show."""
+    parsed = email_parser.parse(simple_message("hi", to="yathaarth@gmail.com"))
+    assert parsed["recipient_name"] == ""
+    assert parsed["recipient_email"] == "yathaarth@gmail.com"
