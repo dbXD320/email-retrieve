@@ -338,6 +338,27 @@ def _clean(entries, documents, person: dict) -> list:
 # --- entry points ------------------------------------------------------------
 
 
+def manual_links(person: dict) -> list:
+    """[(label, url)] searches to run by hand.
+
+    Built from the person's details alone, so these always work - even when every
+    provider is rate limited and nothing could be fetched automatically.
+    """
+    name = (person.get("name") or "").strip()
+    if not name:
+        return []
+
+    current = (person.get("company") or "").strip()
+    terms = f"{name} {current}".strip()
+    quoted = urllib.parse.quote_plus(terms)
+
+    return [
+        ("LinkedIn", f"https://www.linkedin.com/search/results/people/?keywords={quoted}"),
+        ("Google", f"https://www.google.com/search?q={urllib.parse.quote_plus(chr(34) + name + chr(34) + ' ' + current)}"),
+        ("DuckDuckGo", f"https://duckduckgo.com/?q={quoted}"),
+    ]
+
+
 def find(person: dict) -> tuple[list, str]:
     """(entries, profile_url). Search public sources, then structure the findings.
 

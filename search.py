@@ -5,12 +5,17 @@ limited, unreachable, or errors, the next is tried; the failing one is put on a
 cooldown so it is not hammered. Results are cached per query on disk, so the same
 person is never searched twice.
 
-Only `duckduckgo` works with no credentials. The others are free but need a key or
-an instance url, and switch themselves on once configured:
+`duckduckgo` and `duckduckgo_lite` work with no credentials - two endpoints of the
+same service that are rate limited independently, so one often answers when the
+other will not. The others are free but need a key or an instance url, and switch
+themselves on once configured:
 
     google_cse  GOOGLE_CSE_KEY + GOOGLE_CSE_CX   (100 queries/day free)
     brave       BRAVE_API_KEY                    (free tier)
     searx       SEARX_URL                        (a SearXNG instance with JSON on)
+
+Requests are throttled globally: one at a time, at most one every `SEARCH_DELAY`
+seconds, across every provider and every person. A cached query does not wait.
 
 Nothing here tries to look like a browser or work around a provider's limits - a
 refusal is taken at face value and the next provider is used instead.
@@ -19,6 +24,7 @@ refusal is taken at face value and the next provider is used instead.
 import datetime
 import json
 import logging
+import threading
 import time
 import urllib.parse
 
@@ -39,6 +45,28 @@ BUSY_STATUSES = {202, 403, 429, 500, 502, 503, 504}
 
 class SearchUnavailable(RuntimeError):
     """No provider could answer. Distinct from "searched and found nothing"."""
+
+
+# --- throttling --------------------------------------------------------------
+
+# One lock for every provider, so two lookups can never search at the same time.
+_request_lock = threading.Lock()
+_last_request = 0.0  # monotonic time of the last request we sent
+
+
+def _throttle() -> None:
+    """Wait until `SEARCH_DELAY` seconds have passed since the last request.
+
+    Global on purpose: the limit is per client, not per person or per provider,
+    so searches for different people have to queue behind each other too.
+    Call this holding `_request_lock`.
+    """
+    global _last_request
+    wait = config.SEARCH_DELAY - (time.monotonic() - _last_request)
+    if wait > 0:
+        log.info("Throttling: waiting %.1fs before the next search request", wait)
+        time.sleep(wait)
+    _last_request = time.monotonic()
 
 
 # --- per-provider cooldown ---------------------------------------------------
@@ -211,6 +239,40 @@ def _unwrap_ddg(href: str) -> str:
     return href
 
 
+def _duckduckgo_lite(query: str) -> list:
+    """DuckDuckGo's "lite" page. Same operator as `duckduckgo`, different endpoint.
+
+    Worth having because the two are rate limited independently in practice - when
+    html.duckduckgo.com refuses us, this one has still answered. Not a way around
+    a limit: if it refuses too, the chain moves on.
+    """
+    try:
+        response = requests.post(
+            "https://lite.duckduckgo.com/lite/",
+            data={"q": query},
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise SearchUnavailable(str(exc)) from exc
+
+    if response.status_code in BUSY_STATUSES or "anomaly" in response.text.lower():
+        raise SearchUnavailable(f"rate limited (HTTP {response.status_code})")
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    snippets = [td.get_text(" ", strip=True) for td in soup.select("td.result-snippet")]
+    results = []
+    for index, link in enumerate(soup.select("a.result-link")[:MAX_RESULTS]):
+        results.append(
+            {
+                "title": link.get_text(" ", strip=True),
+                "url": _unwrap_ddg(link.get("href", "")),
+                "snippet": snippets[index] if index < len(snippets) else "",
+            }
+        )
+    return results
+
+
 def _google_cse(query: str) -> list:
     """Google Custom Search JSON API. Free tier is 100 queries a day."""
     response = _get(
@@ -293,6 +355,7 @@ def _searx(query: str) -> list:
 
 PROVIDERS = {
     "duckduckgo": _duckduckgo,
+    "duckduckgo_lite": _duckduckgo_lite,
     "google_cse": _google_cse,
     "brave": _brave,
     "searx": _searx,
@@ -301,7 +364,7 @@ PROVIDERS = {
 
 def _configured(name: str) -> bool:
     """Whether this provider has what it needs to run."""
-    if name == "duckduckgo":
+    if name in ("duckduckgo", "duckduckgo_lite"):
         return True
     if name == "google_cse":
         return bool(config.GOOGLE_CSE_KEY and config.GOOGLE_CSE_CX)
@@ -338,12 +401,15 @@ def search(query: str) -> list:
             problems.append(f"{name}: cooling down")
             continue
 
-        try:
-            results = dedupe(provider(query))
-        except SearchUnavailable as exc:
-            _rest(name, str(exc))
-            problems.append(f"{name}: {exc}")
-            continue
+        # Held across the request, so nothing else searches concurrently.
+        with _request_lock:
+            _throttle()
+            try:
+                results = dedupe(provider(query))
+            except SearchUnavailable as exc:
+                _rest(name, str(exc))
+                problems.append(f"{name}: {exc}")
+                continue
 
         answered = True
         if results:

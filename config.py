@@ -55,9 +55,12 @@ ENABLE_EXPERIENCE_SEARCH = os.getenv("ENABLE_EXPERIENCE_SEARCH", "true").strip()
 # the others switch on once their key or url is set below.
 SEARCH_PROVIDERS = [
     name.strip()
-    for name in os.getenv("SEARCH_PROVIDERS", "duckduckgo,google_cse,brave,searx").split(",")
+    for name in os.getenv("SEARCH_PROVIDERS", "duckduckgo,duckduckgo_lite,google_cse,brave,searx").split(",")
     if name.strip()
 ]
+
+# Minimum seconds between search requests, across all providers and people.
+SEARCH_DELAY = _int("SEARCH_DELAY", 6)
 
 # How long to leave a provider alone after it refuses us.
 SEARCH_COOLDOWN_SECONDS = _int("SEARCH_COOLDOWN_SECONDS", 900)

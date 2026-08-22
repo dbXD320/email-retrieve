@@ -38,8 +38,7 @@
     {% if error %}
       <p class="note">
         Could not search just now - {{ error }}. Anything already stored is kept, so nothing
-        was lost; try again in a few minutes. The free search endpoint limits how often it
-        can be queried.
+        was lost; try again in a few minutes, or use the search links below.
       </p>
     {% endif %}
 
@@ -89,6 +88,15 @@
           automatically, so nothing was extracted from it. Worth a look by hand.
         </p>
       {% endif %}
+    {% endif %}
+
+    {% if manual and (not entries or error) %}
+      <p class="meta" style="margin:1.2rem 0 .3rem">Search by hand:</p>
+      <p class="meta">
+        {% for label, url in manual %}
+          <a class="chip" href="{{ url }}" target="_blank" rel="noopener">{{ label }}</a>
+        {% endfor %}
+      </p>
     {% endif %}
 </main>
 </body>

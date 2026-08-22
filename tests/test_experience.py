@@ -431,3 +431,37 @@ def test_profile_link_falls_back_to_older_rows(monkeypatch):
         [f for f in storage.EXPERIENCE_FIELDNAMES if f != "profile_url"],
     )
     assert experience.profile_link(PERSON["email"]) == "https://in.linkedin.com/in/legacy"
+
+
+# --- the always-available fallback ------------------------------------------
+
+
+def test_manual_links_are_offered_for_every_person():
+    labels = [label for label, _ in experience.manual_links(PERSON)]
+    assert labels == ["LinkedIn", "Google", "DuckDuckGo"]
+
+
+def test_manual_links_include_name_and_company():
+    urls = dict((label, url) for label, url in experience.manual_links(PERSON))
+    assert "Yathaarth+Sharma" in urls["LinkedIn"]
+    assert "Magi" in urls["LinkedIn"]
+    assert "%22Yathaarth+Sharma%22" in urls["Google"], "the name should be quoted for Google"
+
+
+def test_manual_links_work_without_a_company():
+    urls = dict(experience.manual_links({"name": "Solo Person", "company": "", "email": "a@b.c"}))
+    assert "Solo+Person" in urls["LinkedIn"]
+
+
+def test_manual_links_need_a_name():
+    assert experience.manual_links({"name": "", "company": "Magi", "email": "a@b.c"}) == []
+
+
+def test_manual_links_do_not_depend_on_search(monkeypatch):
+    """They are built from the person alone, so a total outage still gives them."""
+    def blocked(q):
+        raise experience.SearchUnavailable("everything is down")
+
+    import search as search_module
+    monkeypatch.setattr(search_module, "search", blocked)
+    assert len(experience.manual_links(PERSON)) == 3

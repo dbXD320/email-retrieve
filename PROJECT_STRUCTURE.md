@@ -159,12 +159,16 @@ Search behind a provider abstraction, so no single engine can break the feature.
   (rate limit, 4xx/5xx, network error, unreadable response) moves on to the next. An empty
   result also falls through - worth a second opinion - but everyone finding nothing is
   recorded as a real answer, not an error.
+- **Throttle**: one request at a time (a single lock across every provider), and at
+  least `SEARCH_DELAY` seconds between requests - global, so searches for different
+  people queue behind each other too. A cached query never waits.
 - **Cooldown**: a provider that refuses is left alone for `SEARCH_COOLDOWN_SECONDS`
   (default 900) rather than retried on every lookup.
 - **Query cache**: `output/search_cache.json`, keyed by query, valid for
   `SEARCH_CACHE_DAYS`. Shared across people, so overlapping queries cost nothing and the
   cache survives a restart.
-- **Providers**: `duckduckgo` (HTML page, free, no key, rate limits readily), `google_cse`
+- **Providers**: `duckduckgo` (HTML page, free, no key, rate limits readily),
+  `duckduckgo_lite` (the lite endpoint, throttled independently in practice), `google_cse`
   (Google Custom Search JSON API, 100/day free, needs `GOOGLE_CSE_KEY` + `GOOGLE_CSE_CX`),
   `brave` (`BRAVE_API_KEY`), `searx` (`SEARX_URL`, an instance with JSON enabled). Each one
   enables itself once its credentials exist; `search.status()` reports what is usable.

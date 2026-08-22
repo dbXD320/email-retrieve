@@ -1,5 +1,7 @@
 """Tests for the search-provider abstraction: fallback, cooldown, cache, dedupe."""
 
+import time
+
 import pytest
 
 import config
@@ -320,3 +322,161 @@ def test_configured_reflects_credentials(monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_CSE_KEY", "k")
     monkeypatch.setattr(config, "GOOGLE_CSE_CX", "c")
     assert search._configured("google_cse") is True
+
+
+# --- the lite endpoint -------------------------------------------------------
+
+
+def test_lite_is_available_without_credentials():
+    assert search._configured("duckduckgo_lite") is True
+
+
+def test_lite_parses_results(monkeypatch):
+    html = """
+      <table>
+        <tr><td><a class="result-link" href="https://a.example/1">First</a></td></tr>
+        <tr><td class="result-snippet">about the first</td></tr>
+        <tr><td><a class="result-link" href="https://b.example/2">Second</a></td></tr>
+        <tr><td class="result-snippet">about the second</td></tr>
+      </table>
+    """
+
+    class Response:
+        status_code = 200
+        text = html
+
+    monkeypatch.setattr(search.requests, "post", lambda *a, **k: Response())
+    results = search._duckduckgo_lite("q")
+    assert [r["url"] for r in results] == ["https://a.example/1", "https://b.example/2"]
+    assert results[0]["title"] == "First"
+    assert results[0]["snippet"] == "about the first"
+
+
+def test_lite_reports_a_rate_limit(monkeypatch):
+    class Response:
+        status_code = 200
+        text = "<html>anomaly</html>"
+
+    monkeypatch.setattr(search.requests, "post", lambda *a, **k: Response())
+    with pytest.raises(search.SearchUnavailable):
+        search._duckduckgo_lite("q")
+
+
+def test_lite_covers_for_the_html_endpoint(monkeypatch):
+    """The point of having both: one refusing must not end the search."""
+    def blocked(q):
+        raise search.SearchUnavailable("rate limited")
+
+    monkeypatch.setattr(config, "SEARCH_PROVIDERS", ["duckduckgo", "duckduckgo_lite"])
+    monkeypatch.setattr(search, "PROVIDERS", {
+        "duckduckgo": blocked,
+        "duckduckgo_lite": lambda q: [{"title": "t", "url": "https://ok.example/1", "snippet": "s"}],
+    })
+    monkeypatch.setattr(search, "_configured", lambda name: True)
+
+    assert [r["url"] for r in search.search("q")] == ["https://ok.example/1"]
+
+
+# --- throttling --------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def reset_throttle(monkeypatch):
+    """No real waiting in tests; the throttle tests set a delay themselves."""
+    monkeypatch.setattr(search, "_last_request", 0.0)
+    monkeypatch.setattr(config, "SEARCH_DELAY", 0)
+
+
+def test_consecutive_requests_are_spaced(monkeypatch):
+    """The second query must wait out SEARCH_DELAY."""
+    slept, clock = [], [1000.0]
+    monkeypatch.setattr(config, "SEARCH_DELAY", 6)
+    monkeypatch.setattr(search.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(search.time, "sleep", lambda s: slept.append(s))
+    use_providers(monkeypatch, ["p"], p=lambda q: [hit("https://a.example/" + q)])
+
+    search.search("one")
+    clock[0] += 2  # only 2s later
+    search.search("two")
+
+    assert slept == [4], "should wait the remaining 4 of the 6 seconds"
+
+
+def test_no_wait_when_the_delay_has_already_passed(monkeypatch):
+    slept, clock = [], [1000.0]
+    monkeypatch.setattr(config, "SEARCH_DELAY", 6)
+    monkeypatch.setattr(search.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(search.time, "sleep", lambda s: slept.append(s))
+    use_providers(monkeypatch, ["p"], p=lambda q: [hit("https://a.example/" + q)])
+
+    search.search("one")
+    clock[0] += 30
+    search.search("two")
+
+    assert slept == []
+
+
+def test_the_delay_applies_across_different_people(monkeypatch):
+    """The limit is per client, so a different person's query waits too."""
+    slept, clock = [], [1000.0]
+    monkeypatch.setattr(config, "SEARCH_DELAY", 6)
+    monkeypatch.setattr(search.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(search.time, "sleep", lambda s: slept.append(s))
+    use_providers(monkeypatch, ["p"], p=lambda q: [hit("https://a.example/" + q)])
+
+    search.search('"Person One" Acme')
+    search.search('"Person Two" Initech')
+    assert slept == [6]
+
+
+def test_a_cached_query_does_not_wait(monkeypatch):
+    slept = []
+    monkeypatch.setattr(config, "SEARCH_DELAY", 6)
+    monkeypatch.setattr(search.time, "sleep", lambda s: slept.append(s))
+    use_providers(monkeypatch, ["p"], p=lambda q: [hit("https://a.example/1")])
+
+    search.search("same")
+    before = len(slept)
+    search.search("same")  # served from cache
+    assert len(slept) == before
+
+
+def test_the_delay_also_precedes_a_fallback_provider(monkeypatch):
+    """Falling through to another provider is another request, so it waits too."""
+    slept, clock = [], [1000.0]
+    monkeypatch.setattr(config, "SEARCH_DELAY", 6)
+    monkeypatch.setattr(search.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(search.time, "sleep", lambda s: slept.append(s))
+
+    def blocked(q):
+        raise search.SearchUnavailable("rate limited")
+
+    use_providers(monkeypatch, ["a", "b"], a=blocked, b=lambda q: [hit("https://ok.example/1")])
+    search.search("q")
+    assert slept == [6], "the second provider's request is throttled as well"
+
+
+def test_searches_never_overlap(monkeypatch):
+    """Two threads searching at once must be serialised by the lock."""
+    import threading
+
+    monkeypatch.setattr(config, "SEARCH_DELAY", 0)
+    in_flight, overlaps = [], []
+
+    def provider(query):
+        in_flight.append(query)
+        if len(in_flight) > 1:
+            overlaps.append(tuple(in_flight))
+        time.sleep(0.05)
+        in_flight.remove(query)
+        return [hit("https://a.example/" + query)]
+
+    use_providers(monkeypatch, ["p"], p=provider)
+
+    threads = [threading.Thread(target=search.search, args=(f"q{i}",)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert overlaps == [], f"requests overlapped: {overlaps}"

@@ -133,6 +133,7 @@ def experience():
         searched=experience_store.searched(email),
         profile=experience_store.profile_link(email),
         error=error,
+        manual=experience_store.manual_links(person),
         refreshed=refresh,
         store_path=config.EXPERIENCE_PATH,
     )
