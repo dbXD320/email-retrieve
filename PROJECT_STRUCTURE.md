@@ -14,7 +14,7 @@ email-retrieve/
 ├── gmail_client.py         # Gmail API auth + fetching sent messages
 ├── email_parser.py         # raw Gmail message -> recipient / subject / date / body
 ├── company.py              # guess the recipient's company from the body
-├── storage.py              # write / read the CSV
+├── storage.py              # write / read the CSV (the cache)
 ├── app.py                  # minimal Flask web view of the results
 ├── templates/
 │   └── index.html          # the one page: table, page size, pagination
@@ -90,15 +90,19 @@ Writes the collected rows to `output/sent_emails.csv` with a fixed header:
 Opens the file once and streams rows.
 
 ### `app.py` and `templates/index.html`
-A one-route Flask app for browsing the results:
+A one-route Flask app that **processes on demand**, page by page:
 
-- Reads `output/sent_emails.csv` via `storage.read_rows` - **no Gmail or LLM calls**, so a
-  page renders in a couple of milliseconds. Run `main.py` to refresh the data.
-- Table of two columns only: recipient name and company.
-- Page size 10 / 20 / 50 and first/prev/next/last pagination, both plain links with
-  `?size=&page=` - no JavaScript, no build step.
-- Bad or missing query params are clamped rather than erroring; an absent CSV shows a
-  "run main.py" message instead of a stack trace.
+- Opening a page asks for `page x size` records. Whatever is already in the CSV is reused;
+  only the shortfall is fetched from Gmail, parsed, given a company, appended and saved.
+  The mailbox is never processed upfront.
+- The CSV is the cache, so revisiting a page is instant and no email is ever processed
+  twice. `main.py` still exists for processing everything in one go.
+- Thread rules are unchanged: a thread already resolved in the CSV keeps its company, and a
+  new thread is extracted from its earliest email.
+- Table of two columns only: recipient name and company. Page size 10 / 20 / 50 and
+  first/prev/next pagination via plain `?size=&page=` links - no JavaScript, no build step.
+- Reaching the end of the mailbox disables Next and says so; a page past the end clamps
+  back. A CSV locked by Excel shows a note instead of a 500.
 - Most sent mail has no display name in the `To` header, so a name derived from the address
   is shown in italics to distinguish it from a real one.
 

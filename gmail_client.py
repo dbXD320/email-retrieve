@@ -172,3 +172,32 @@ if __name__ == "__main__":
         ["message_id", "thread_id", "to", "subject", "date"],
     )
     print(f"Fetched {len(rows)} sent messages -> {out}")
+
+
+def fetch_message(service, message_id: str) -> dict:
+    """One raw Gmail message by id, for filling in a gap later."""
+    return _execute(
+        service.users().messages().get(userId="me", id=message_id, format="full")
+    )
+
+
+def iter_sent_refs(service):
+    """Yield {'id', 'threadId'} for sent mail, newest first.
+
+    Ids only - no bodies, so this is cheap (500 per API call) and a caller can
+    stop as soon as it has enough. This is what lets the web app process just one
+    page's worth instead of the whole mailbox.
+    """
+    query = _build_query()
+    page_token = None
+    while True:
+        page = _execute(
+            service.users().messages().list(
+                userId="me", q=query, maxResults=500, pageToken=page_token
+            )
+        )
+        for ref in page.get("messages", []):
+            yield ref
+        page_token = page.get("nextPageToken")
+        if not page_token:
+            return

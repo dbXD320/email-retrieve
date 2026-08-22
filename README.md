@@ -33,7 +33,8 @@ venv\Scripts\python.exe app.py
 ```
 
 Then open http://127.0.0.1:5000 - a table of recipient and company, 10/20/50 per page.
-It reads the CSV, so re-run `main.py` to refresh what it shows.
+Pages are processed from Gmail the first time you open them and cached in the CSV, so
+you can start here without running `main.py` at all.
 
 ## Tests
 

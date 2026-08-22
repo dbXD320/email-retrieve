@@ -43,6 +43,63 @@ def add_companies(rows):
     return companies
 
 
+def _thread_companies(rows) -> dict:
+    """thread_id -> (company, source) for threads already resolved in the CSV."""
+    known = {}
+    for row in rows:
+        company_name = (row.get("company") or "").strip()
+        if company_name:
+            known.setdefault(row.get("thread_id", ""), (company_name, row.get("company_source") or ""))
+    return known
+
+
+def ensure_processed(count: int):
+    """Make sure at least `count` records are stored, processing more if needed.
+
+    The CSV is the cache: rows already in it are never reprocessed. Anything
+    missing is fetched from Gmail newest-first, parsed, given a company, appended
+    and saved. Returns (rows, exhausted) - exhausted means Gmail had no more.
+    """
+    rows = storage.read_rows(config.OUTPUT_PATH)
+    if len(rows) >= count:
+        return rows, False
+
+    service = gmail_client.get_service()
+    known_ids = {r.get("message_id") for r in rows}
+    wanted = count - len(rows)
+
+    refs = []
+    for ref in gmail_client.iter_sent_refs(service):
+        if ref["id"] in known_ids:
+            continue
+        refs.append(ref)
+        if len(refs) >= wanted:
+            break
+    exhausted = len(refs) < wanted
+
+    parsed = []
+    for ref in refs:
+        try:
+            parsed.append(email_parser.parse(gmail_client.fetch_message(service, ref["id"])))
+        except Exception as exc:
+            log.warning("Could not process %s: %s", ref["id"], exc)
+
+    # A thread already resolved in the CSV keeps its company; new threads are
+    # extracted from their earliest email, as always.
+    from_csv = _thread_companies(rows)
+    fresh = company.guess_by_thread([p for p in parsed if p["thread_id"] not in from_csv])
+
+    for row in parsed:
+        found, source = from_csv.get(row["thread_id"]) or fresh.get(row["thread_id"], ("", ""))
+        row["company"] = found
+        row["company_source"] = source
+
+    rows += parsed
+    storage.write_rows(rows, config.OUTPUT_PATH)
+    log.info("Processed %s new emails, %s stored in total", len(parsed), len(rows))
+    return rows, exhausted
+
+
 def summarise(rows, failed, companies, out) -> None:
     found = sum(1 for r in rows if r["company"])
     by_source = collections.Counter(r["company_source"] for r in rows if r["company"])

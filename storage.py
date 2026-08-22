@@ -11,6 +11,9 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 FIELDNAMES = [
+    # ids first: they let the web app re-fetch one message to fill a gap
+    "message_id",
+    "thread_id",
     "recipient_name",
     "recipient_email",
     "subject",
