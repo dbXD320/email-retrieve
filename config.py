@@ -26,6 +26,7 @@ TOKEN_PATH = _path("TOKEN_PATH", "credentials/token.json")
 OUTPUT_PATH = _path("OUTPUT_PATH", "output/sent_emails.csv")
 EXPERIENCE_PATH = _path("EXPERIENCE_PATH", "output/experience.csv")
 SEARCH_CACHE_PATH = _path("SEARCH_CACHE_PATH", "output/search_cache.json")
+MANUAL_PATH = _path("MANUAL_PATH", "output/manual_lookups.csv")
 
 # Read-only is all this script needs. Changing this invalidates the cached token.
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]

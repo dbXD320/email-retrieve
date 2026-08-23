@@ -249,6 +249,61 @@ def _profile_link(person: dict, documents: list) -> str:
     return candidates[0]["url"]
 
 
+# --- email addresses in the collected text ----------------------------------
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+# Shared inboxes, not a person's address.
+ROLE_LOCALPARTS = {
+    "info", "support", "admin", "contact", "sales", "hello", "help", "team",
+    "careers", "jobs", "hr", "press", "media", "billing", "noreply", "no-reply",
+    "donotreply", "webmaster", "postmaster", "abuse", "privacy", "legal", "office",
+}
+
+
+def _is_theirs(address: str, person: dict) -> bool:
+    """Whether an address plausibly belongs to this person.
+
+    Without this, a page yields the site's own info@ and webmaster@ addresses.
+    """
+    local, _, domain = address.lower().partition("@")
+    if not domain or local in ROLE_LOCALPARTS:
+        return False
+
+    tokens = [t for t in re.split(r"[^a-z]+", (person.get("name") or "").lower()) if len(t) > 2]
+    if any(token in local for token in tokens):
+        return True
+
+    company = re.sub(r"[^a-z0-9]", "", (person.get("company") or "").lower())
+    return bool(company) and company in domain.replace(".", "")
+
+
+def emails_in(documents: list, person: dict, limit: int = 6) -> list:
+    """[{"email", "kind", "source"}] found in the retrieved text.
+
+    `kind` is "personal" for a free provider, otherwise "work". Only addresses
+    that look like this person's are kept - nothing is guessed or constructed.
+    """
+    found, seen = [], set()
+    for doc in documents:
+        for match in EMAIL_RE.finditer(doc["text"]):
+            address = match.group(0).strip(".,;:").lower()
+            if address in seen or not _is_theirs(address, person):
+                continue
+            seen.add(address)
+            domain = address.partition("@")[2]
+            found.append(
+                {
+                    "email": address,
+                    "kind": "personal" if domain in company_rules.FREE_DOMAINS else "work",
+                    "source": doc["url"],
+                }
+            )
+            if len(found) >= limit:
+                return found
+    return found
+
+
 # --- structuring what was collected -----------------------------------------
 
 STRUCTURE_PROMPT = (
@@ -359,24 +414,30 @@ def manual_links(person: dict) -> list:
     ]
 
 
-def find(person: dict) -> tuple[list, str]:
-    """(entries, profile_url). Search public sources, then structure the findings.
+def gather(person: dict) -> tuple[list, str, list]:
+    """(entries, profile_url, documents) from one pass over public sources.
 
-    `profile_url` is returned on every search, so the page can always link out to
-    the person's profile - not just when nothing was extracted.
+    Returning the documents lets a caller mine them for something else - the
+    manual lookup uses them to pick out email addresses - without searching twice.
     """
     if not config.ENABLE_EXPERIENCE_SEARCH:
         log.info("Experience search is switched off")
-        return [], ""
+        return [], "", []
     if not (person.get("name") or "").strip():
-        return [], ""
+        return [], "", []
 
     documents = _collect(person)
     if not documents:
-        return [], ""
+        return [], "", []
 
     # The profile link is useful either way, so always look for one.
-    return _structure(person, documents), _profile_link(person, documents)
+    return _structure(person, documents), _profile_link(person, documents), documents
+
+
+def find(person: dict) -> tuple[list, str]:
+    """(entries, profile_url). Search public sources, then structure the findings."""
+    entries, profile, _ = gather(person)
+    return entries, profile
 
 
 def lookup(person: dict, refresh: bool = False) -> tuple[list, bool, str]:

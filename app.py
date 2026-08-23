@@ -14,6 +14,7 @@ from flask import Flask, redirect, render_template, request, url_for
 import config
 import experience as experience_store
 import main
+import manual as manual_store
 import storage
 
 app = Flask(__name__)
@@ -136,6 +137,44 @@ def experience():
         manual=experience_store.manual_links(person),
         refreshed=refresh,
         store_path=config.EXPERIENCE_PATH,
+    )
+
+
+@app.route("/manual")
+def manual():
+    """Look up someone typed in by hand, stored separately from the Gmail data."""
+    form = {
+        "name": (request.args.get("name") or "").strip(),
+        "company": (request.args.get("company") or "").strip(),
+        "email": (request.args.get("email") or "").strip().lower(),
+    }
+
+    result = None
+    if form["name"]:
+        result = manual_store.lookup(
+            form["name"],
+            form["company"],
+            form["email"],
+            refresh=request.args.get("refresh") == "1",
+        )
+        app.logger.info(
+            "Manual lookup %r: %s entries%s",
+            form["name"],
+            len(result["entries"]),
+            " (cached)" if result["from_cache"] else "",
+        )
+
+    return render_template(
+        "manual.html",
+        form=form,
+        result=result,
+        people=manual_store.people(),
+        store_path=config.MANUAL_PATH,
+        manual_links=(
+            experience_store.manual_links(form)
+            if result and (not result["entries"] or result["error"])
+            else []
+        ),
     )
 
 

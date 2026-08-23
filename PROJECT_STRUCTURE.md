@@ -17,9 +17,11 @@ email-retrieve/
 ├── storage.py              # write / read the CSVs (the caches)
 ├── search.py               # search providers with fallback, cooldown and a query cache
 ├── experience.py           # fetch + LLM structuring, cached to CSV
+├── manual.py               # typed-in people: same pipeline, separate CSV
 ├── app.py                  # minimal Flask web view of the results
 ├── templates/
 │   ├── index.html          # the list: table, page size, pagination
+│   ├── manual.html         # look up a person by name / company / email
 │   └── experience.html     # one person's previous roles
 ├── static/
 │   └── style.css           # shared styles for both pages
@@ -28,7 +30,7 @@ email-retrieve/
 ├── .gitignore              # venv/, .env, credentials/, output/
 ├── README.md               # setup + how to run
 ├── credentials/            # Google OAuth client secret + cached token (gitignored)
-├── output/                 # generated CSVs: sent_emails.csv, experience.csv (gitignored)
+├── output/                 # generated CSVs + the search cache (gitignored)
 └── tests/
     ├── test_email_parser.py
     └── test_company.py
@@ -175,6 +177,28 @@ Search behind a provider abstraction, so no single engine can break the feature.
 
 Nothing here tries to disguise itself as a browser or evade a provider's limits - a refusal
 is taken at face value and the next provider is used.
+
+### `manual.py`
+People typed in by hand, kept in `output/manual_lookups.csv` - deliberately separate from
+the Gmail-derived data so the two never mix.
+
+    key, person_name, current_company, email_given, emails_found, profile_url,
+    position, company, role, dates, source, found_at
+
+- Identity is **name + current company** (`key_for`), because the email is optional.
+- The search, fetching, LLM structuring, per-query cache and throttle all come from
+  `search` and `experience`; this module only adds the second store and the email hunt.
+- `experience.gather` returns the documents alongside the roles, so one search serves both
+  the experience extraction and the email lookup - nothing is searched twice.
+- `experience.emails_in` picks addresses out of the retrieved text, keeping only those that
+  look like the person's (their name in the local part, or the company's domain) and
+  dropping shared inboxes like `info@` and `careers@`. A free-provider domain is labelled
+  `personal`, anything else `work`. Nothing is constructed or guessed - only addresses that
+  actually appear in a fetched page. Skipped entirely when you supply an email.
+- Caching, refresh and keep-old-results-on-failure behave exactly as the Gmail flow does.
+
+`/manual` is the page: a three-field form, the result below it, and chips for people looked
+up before.
 
 ### `tests/`
 Two pytest files covering the logic that's actually easy to get wrong, using hardcoded

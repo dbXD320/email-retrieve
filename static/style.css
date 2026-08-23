@@ -65,3 +65,19 @@ td.action { text-align: right; width: 1%; white-space: nowrap; }
 .kv dt, .kv .k { color: var(--muted); min-width: 8rem; font-size: .85rem; }
 .todo { margin: .4rem 0 0 1.1rem; padding: 0; color: var(--muted); font-size: .85rem; }
 .todo li { margin: .2rem 0; }
+
+/* --- manual lookup form --- */
+form.lookup {
+  display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end;
+  margin: 0 0 1.25rem;
+}
+form.lookup label { display: flex; flex-direction: column; gap: .25rem; font-size: .8rem; color: var(--muted); }
+form.lookup input {
+  font: inherit; font-size: .9rem; padding: .35rem .5rem; min-width: 13rem;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 5px;
+}
+form.lookup input:focus { outline: none; border-color: var(--accent); }
+form.lookup .opt { text-transform: none; }
+hr { border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }
+h2 { font-size: 1.05rem; margin: 0 0 .75rem; }

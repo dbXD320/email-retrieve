@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Look up a person</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main>
+  <h1>Look up a person</h1>
+  <p class="meta"><a href="{{ url_for('index') }}">&lsaquo; Sent emails</a></p>
+
+  <form action="{{ url_for('manual') }}" method="get" class="lookup">
+    <label>Name<input name="name" value="{{ form.name }}" required autofocus></label>
+    <label>Current company<input name="company" value="{{ form.company }}"></label>
+    <label>Email <span class="opt">(optional)</span><input name="email" type="email" value="{{ form.email }}"></label>
+    <button class="btn" type="submit">Search</button>
+  </form>
+
+  {% if result %}
+    <hr>
+    <h2>{{ form.name }}{% if form.company %} &middot; {{ form.company }}{% endif %}</h2>
+
+    <div class="kv">
+      <div><span class="k">Current company</span><span>{{ form.company or '—' }}</span></div>
+      <div>
+        <span class="k">Email</span>
+        <span>
+          {% if form.email %}
+            {{ form.email }} <span class="blank">(as given)</span>
+          {% elif result.emails %}
+            {% for e in result.emails %}
+              {{ e.email }} <span class="blank">({{ e.kind }})</span>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          {% else %}<span class="blank">none found</span>{% endif %}
+        </span>
+      </div>
+      <div>
+        <span class="k">Profile</span>
+        <span>
+          {% if result.profile %}
+            <a href="{{ result.profile }}" target="_blank" rel="noopener">{{ result.profile }}</a>
+          {% else %}<span class="blank">none found</span>{% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="bar">
+      <form action="{{ url_for('manual') }}" method="get">
+        <input type="hidden" name="name" value="{{ form.name }}">
+        <input type="hidden" name="company" value="{{ form.company }}">
+        <input type="hidden" name="email" value="{{ form.email }}">
+        <input type="hidden" name="refresh" value="1">
+        <button class="btn" type="submit">Search again</button>
+      </form>
+      {% if result.from_cache %}<span class="meta">Shown from {{ store_path.name }}.</span>{% endif %}
+    </div>
+
+    {% if result.error %}
+      <p class="note">
+        Could not search just now - {{ result.error }}. Nothing stored was lost; try again in
+        a few minutes, or use the links below.
+      </p>
+    {% endif %}
+
+    {% if result.entries %}
+      <table>
+        <thead>
+          <tr><th>#</th><th>Company</th><th>Role</th><th>Dates</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in result.entries %}
+            <tr>
+              <td>{{ entry.position }}</td>
+              <td>{{ entry.company }}</td>
+              <td{% if not entry.role %} class="blank"{% endif %}>{{ entry.role or '—' }}</td>
+              <td{% if not entry.dates %} class="blank"{% endif %}>{{ entry.dates or '—' }}</td>
+              <td>
+                {% if entry.source %}
+                  <a href="{{ entry.source }}" target="_blank" rel="noopener">link</a>
+                {% else %}<span class="blank">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="meta" style="margin-top:1rem">
+        Most recent previous role first, saved to <code>{{ store_path }}</code>. A dash means
+        the sources did not state it - nothing here is guessed.
+      </p>
+    {% elif not result.error %}
+      <p class="note">No verifiable previous roles found in public sources.</p>
+    {% endif %}
+
+    {% if manual_links %}
+      <p class="meta" style="margin:1.2rem 0 .3rem">Search by hand:</p>
+      <p class="meta">
+        {% for label, url in manual_links %}
+          <a class="chip" href="{{ url }}" target="_blank" rel="noopener">{{ label }}</a>
+        {% endfor %}
+      </p>
+    {% endif %}
+  {% endif %}
+
+  {% if people %}
+    <hr>
+    <p class="meta" style="margin-bottom:.4rem">Looked up before:</p>
+    <p class="meta">
+      {% for person in people %}
+        <a class="chip"
+           href="{{ url_for('manual') }}?name={{ person.name | urlencode }}&company={{ person.company | urlencode }}">
+          {{ person.name }}{% if person.company %} &middot; {{ person.company }}{% endif %}
+        </a>
+      {% endfor %}
+    </p>
+  {% endif %}
+</main>
+</body>
+</html>

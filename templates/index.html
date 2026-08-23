@@ -9,6 +9,9 @@
 <body>
 <main>
   <h1>Sent Emails</h1>
+  <p class="meta" style="margin-bottom:.4rem">
+    <a href="{{ url_for('manual') }}">Look up someone not in this list &rsaquo;</a>
+  </p>
   <p class="meta">
     {% if total %}{{ first }}&ndash;{{ last }} of {{ total }} processed{% if not exhausted %} so far{% endif %}{% else %}Nothing processed yet{% endif %}
   </p>
